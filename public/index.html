@@ -312,7 +312,7 @@ textarea.in{min-height:58px;resize:vertical}
   <aside id="rail">
     <div class="brand">
       <div class="mark" id="railMark">KA</div>
-      <div><b>Nirman Ledger</b><span>Korien Aureate Pvt Ltd</span></div>
+      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span></div>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -324,12 +324,29 @@ textarea.in{min-height:58px;resize:vertical}
         <select class="in" id="siteSel" style="width:auto;font-size:12.5px;padding:4px 8px" onchange="S.ui.site=this.value;render()"></select>
         <span class="chip">FY 2026&#8209;27</span>
         <span class="chip" id="gstChip">23AAMCK7409A1ZT</span>
+        <button class="btn sm dngr" onclick="clearAllDataPrompt()" title="Clear all data" style="font-size:11px;padding:3px 10px">🗑 Clear All Data</button>
         <button class="btn sm gh" onclick="toggleTheme()" title="Switch theme" aria-label="Switch theme"><span id="themeIc">◐</span></button>
       </div>
     </div>
     <main id="view"></main>
   </div>
 </div>
+
+<!-- Lock Screen -->
+<div id="lockScreen" style="display:none;position:fixed;inset:0;z-index:9999;background:var(--ground);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px">
+  <div style="text-align:center;margin-bottom:8px">
+    <div style="font-size:2.5rem;margin-bottom:8px">🔒</div>
+    <div style="font-size:1.3rem;font-weight:700;font-family:var(--cond)">Nirman Ledger</div>
+    <div style="font-size:0.8rem;color:var(--muted);margin-top:4px">Enter password to continue</div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:10px;width:280px">
+    <input id="lockInput" type="password" class="in" placeholder="Password" style="font-size:1rem;padding:10px 14px;text-align:center"
+      onkeydown="if(event.key==='Enter')tryUnlock()">
+    <button class="btn pri" onclick="tryUnlock()" style="padding:10px">Unlock</button>
+    <div id="lockErr" style="color:var(--crit);font-size:0.78rem;text-align:center;min-height:18px"></div>
+  </div>
+</div>
+
 <div id="toast"></div>
 <div id="modalHost"></div>
 
@@ -464,7 +481,11 @@ function waShare(number,text){ window.open(waLink(number,text),'_blank','noopene
 function updateBrandUI(){
   const m=document.getElementById('railMark');
   if(m){ if(S.company&&S.company.logoMark){ m.innerHTML='<img src="'+S.company.logoMark+'" alt="'+esc(S.company.name||'Company logo')+'">'; }
-    else { m.textContent='KA'; } }
+    else { m.textContent=(S.company&&S.company.name?S.company.name.slice(0,2).toUpperCase():'NL'); } }
+  const sub=document.getElementById('brandSub');
+  if(sub) sub.textContent=S.company&&S.company.name?S.company.name:'Your Company';
+  const gc=document.getElementById('gstChip');
+  if(gc) gc.textContent=S.company&&S.company.gstin?S.company.gstin:'GSTIN not set';
 }
 </script>
 
@@ -578,161 +599,20 @@ const CLS={
 /* ================= SEED MASTERS ================= */
 function seed(){
  const coa=COA_SEED.map(a=>({id:a[0],code:a[0],name:a[1],cls:a[2],ob:0,obSide:'Dr'}));
- const ob=(c,dr,cr)=>{const a=coa.find(x=>x.code===c); if(a){a.ob=dr||cr; a.obSide=dr?'Dr':'Cr';}};
- ob('1103',1845000);ob('1101',42500);ob('1102',35000);ob('1201',2860000);ob('1203',318000);
- ob('1301',186400);ob('1302',742000);ob('1303',95600);ob('1304',48000);ob('1311',1240000);
- ob('1401',260000);ob('1402',150000);ob('1501',128400);ob('1502',128400);ob('1507',54200);
- ob('1603',3850000);ob('1604',6200000);ob('1608',148000);ob('1611',920000);ob('1602',2400000);
- ob('1702',0,462000);ob('1703',0,1116000);ob('1706',0,44400);ob('1708',0,138000);
- ob('2101',0,1685000);ob('2102',0,624000);ob('2104',0,168000);ob('2106',0,900000);
- ob('2402',0,4100000);ob('2403',0,1420000);ob('2404',0,2500000);
- ob('3001',0,1000000);ob('3003',0,7494100);ob('2213',0,0);
  return {
   v:1, company:{
-   name:'Korien Aureate Private Limited', unit:'PeeCeeGrandson by Korien Aureate',
-   cin:'U55101MP2026PTC083178', gstin:'23AAMCK7409A1ZT', pan:'AAMCK7409A', tan:'JBPK05614A',
-   udyam:'UDYAM-MP-24-0099863', email:'korienaureate@gmail.com',
-   addr:'3rd Mile, Tilhari, Bilhari, Jabalpur — 482020, Madhya Pradesh, India',
-   state:'Madhya Pradesh', stateCode:'23', qrmp:true, turnoverPrevFY:41200000,
-   bank:'Punjab National Bank — Tilhari Branch', signatory:'Naveen Joshi', designation:'Director',
+   name:'Your Company Name', unit:'',
+   cin:'', gstin:'', pan:'', tan:'',
+   udyam:'', email:'',
+   addr:'',
+   state:'Madhya Pradesh', stateCode:'23', qrmp:false, turnoverPrevFY:0,
+   bank:'', signatory:'', designation:'Director',
    logoMark:KA_LOGO_MARK, logoFull:KA_LOGO_FULL,
    whatsapp:'', upi:''
   },
   ui:{site:'ALL'},
   coa,
-  sites:[
-   {id:'S1',code:'PCG-TIL',name:'PeeCeeGrandson Site — Tilhari',loc:'3rd Mile, Tilhari, Jabalpur',client:'P2',
-    start:'2026-04-01',value:29500000,status:'Active',incharge:'Ravi Yadav',bocw:true},
-   {id:'S2',code:'BAR-SDC',name:'Barela S.D.C. Site',loc:'Barela, Jabalpur',client:'P3',
-    start:'2026-05-10',value:6800000,status:'Active',incharge:'Narendra Mishra',bocw:false},
-   {id:'S3',code:'GV-BIL',name:'Green Valley — Bilhari Boundary & Earthwork',loc:'Bilhari, Jabalpur',client:'P2',
-    start:'2026-06-15',value:4200000,status:'Active',incharge:'Ravi Yadav',bocw:false},
-   {id:'S4',code:'HO',name:'Head Office / Common',loc:'Jabalpur',client:'',start:'2026-04-01',value:0,
-    status:'Active',incharge:'Naveen Joshi',bocw:false}
-  ],
-  parties:[
-   {id:'P1',name:'XX Firm — JCB & Earthmoving Contractor',type:'Vendor',cat:'Machinery Hire',gstin:'23BQMPX1234R1Z5',
-    pan:'BQMPX1234R',gstTreat:'Registered — Regular',tds:'194C',tdsRate:1,state:'23',msme:'Micro',terms:15,
-    phone:'+91-98260-11001',addr:'Tilhari, Jabalpur, MP',ac:'2103'},
-   {id:'P2',name:'Vijan Mahal / PC Mansion (Client)',type:'Customer',cat:'Client',gstin:'23AABCV7788L1Z2',
-    pan:'AABCV7788L',gstTreat:'Registered — Regular',tds:'',tdsRate:0,state:'23',msme:'',terms:30,
-    phone:'+91-94250-22002',addr:'Vijan Mahal, Jabalpur, MP',ac:'1201'},
-   {id:'P3',name:'Barela S.D.C. (Client)',type:'Customer',cat:'Client',gstin:'',pan:'',
-    gstTreat:'Unregistered',tds:'',tdsRate:0,state:'23',msme:'',terms:30,phone:'',addr:'Barela, Jabalpur',ac:'1201'},
-   {id:'P4',name:'Narendra Kumar Mishra — Labour Contractor',type:'Vendor',cat:'Sub-contractor',gstin:'',
-    pan:'BXYPM3421K',gstTreat:'Unregistered',tds:'194C',tdsRate:1,state:'23',msme:'Not Registered',terms:15,
-    phone:'+91-99770-33003',addr:'Jabalpur, MP',ac:'2102'},
-   {id:'P5',name:'UltraTech Cement — Bhopal Depot',type:'Vendor',cat:'Material Supplier',gstin:'23AAACL6442L1Z9',
-    pan:'AAACL6442L',gstTreat:'Registered — Regular',tds:'194Q',tdsRate:0.1,state:'23',msme:'',terms:30,
-    phone:'0755-2551234',addr:'Bhopal, MP',ac:'2101'},
-   {id:'P6',name:'JSW Steel Ltd — Indore',type:'Vendor',cat:'Material Supplier',gstin:'23AAACJ4323H1Z5',
-    pan:'AAACJ4323H',gstTreat:'Registered — Regular',tds:'194Q',tdsRate:0.1,state:'23',msme:'',terms:30,
-    phone:'0731-4551122',addr:'Indore, MP',ac:'2101'},
-   {id:'P7',name:'Narmada Sand & Aggregates Pvt Ltd',type:'Vendor',cat:'Material Supplier',gstin:'23AAECN5678K1Z4',
-    pan:'AAECN5678K',gstTreat:'Registered — Regular',tds:'194Q',tdsRate:0.1,state:'23',msme:'Small',terms:15,
-    phone:'0755-2778899',addr:'Jabalpur, MP',ac:'2101'},
-   {id:'P8',name:'Sheetal Enterprises — Murum & Earth Supply',type:'Vendor',cat:'Material Supplier',
-    gstin:'23AAEFS9911M1Z8',pan:'AAEFS9911M',gstTreat:'Registered — Regular',tds:'194C',tdsRate:2,state:'23',
-    msme:'Micro',terms:15,phone:'+91-98931-44004',addr:'Barela, Jabalpur, MP',ac:'2101'},
-   {id:'P9',name:'Bhopal Transport Services (GTA)',type:'Vendor',cat:'Transport / GTA',gstin:'23AAAFB4455N1Z1',
-    pan:'AAAFB4455N',gstTreat:'Registered — GTA',tds:'194C',tdsRate:2,state:'23',msme:'Small',terms:15,
-    phone:'0755-2551199',addr:'Bhopal, MP',ac:'2103',rcm:true,rcmRate:5},
-   {id:'P10',name:'SecurePro Guarding Services Pvt Ltd',type:'Vendor',cat:'Security (RCM)',gstin:'23AABCS7712Q1Z3',
-    pan:'AABCS7712Q',gstTreat:'Registered — Regular',tds:'194C',tdsRate:2,state:'23',msme:'',terms:30,
-    phone:'0755-4001177',addr:'Bhopal, MP',ac:'2103',rcm:true,rcmRate:18},
-   {id:'P11',name:'Agarwal & Associates — Chartered Accountants',type:'Vendor',cat:'Professional',
-    gstin:'23AAAFA1122R1Z8',pan:'AAAFA1122R',gstTreat:'Registered — Regular',tds:'194J',tdsRate:10,state:'23',
-    msme:'',terms:30,phone:'0755-2665544',addr:'Bhopal, MP',ac:'2103'},
-   {id:'P12',name:'Vindhya Equipment Rentals Pvt Ltd',type:'Vendor',cat:'Equipment Rental',gstin:'23AAECV6633P1Z6',
-    pan:'AAECV6633P',gstTreat:'Registered — Regular',tds:'194I',tdsRate:2,state:'23',msme:'Small',terms:30,
-    phone:'0755-4001199',addr:'Jabalpur, MP',ac:'2103'},
-   {id:'P13',name:'Sanjay Shuttering & Scaffolding',type:'Vendor',cat:'Equipment Rental',gstin:'23BJFPR7788N1Z7',
-    pan:'BJFPR7788N',gstTreat:'Registered — Regular',tds:'194I',tdsRate:2,state:'23',msme:'Micro',terms:15,
-    phone:'+91-98261-55005',addr:'Jabalpur, MP',ac:'2103'},
-   {id:'P14',name:'Shivam Construction Company (Civil SC)',type:'Vendor',cat:'Sub-contractor',
-    gstin:'23BQMPS4499T1Z2',pan:'BQMPS4499T',gstTreat:'Registered — Regular',tds:'194C',tdsRate:1,state:'23',
-    msme:'Micro',terms:15,phone:'0755-2445566',addr:'Jabalpur, MP',ac:'2102'},
-   {id:'P15',name:'MP Poorv Kshetra Vidyut Vitaran Co. Ltd',type:'Vendor',cat:'Utility',gstin:'23AADCM5528F1ZH',
-    pan:'AADCM5528F',gstTreat:'Registered — Regular',tds:'',tdsRate:0,state:'23',msme:'',terms:15,
-    phone:'1912',addr:'Jabalpur, MP',ac:'2103'}
-  ],
-  machines:[
-   {id:'M1',code:'JCB-3DX-01',name:'JCB 3DX Backhoe Loader',type:'Backhoe Loader',reg:'MP20-GA-4471',
-    own:'Hired',owner:'P1',rate:2200,unit:'Machine Hour',diesel:'Included',hmOpen:1482,status:'Active'},
-   {id:'M2',code:'JCB-EX-02',name:'JCB 140 Tracked Excavator',type:'Excavator',reg:'MP20-GB-7712',
-    own:'Owned',owner:'',rate:1800,unit:'Machine Hour',diesel:'Company',hmOpen:906,status:'Active'},
-   {id:'M3',code:'TIP-01',name:'Tata 1613 Tipper (10 Wheeler)',type:'Tipper',reg:'MP20-HA-2201',
-    own:'Owned',owner:'',rate:450,unit:'Trip',diesel:'Company',hmOpen:0,status:'Active'},
-   {id:'M4',code:'TIP-02',name:'Ashok Leyland Tipper (6 Wheeler)',type:'Tipper',reg:'MP20-HA-3390',
-    own:'Hired',owner:'P8',rate:380,unit:'Trip',diesel:'Included',hmOpen:0,status:'Active'},
-   {id:'M5',code:'MIX-01',name:'Concrete Mixer 10/7',type:'Mixer',reg:'—',own:'Owned',owner:'',
-    rate:900,unit:'Day',diesel:'Company',hmOpen:0,status:'Active'},
-   {id:'M6',code:'ROL-01',name:'Vibratory Soil Compactor / Roller',type:'Roller',reg:'MP20-GC-1180',
-    own:'Hired',owner:'P12',rate:1400,unit:'Machine Hour',diesel:'Included',hmOpen:0,status:'Idle'}
-  ],
-  staff:[
-   {id:'E1',code:'KA-001',name:'Naveen Joshi',desig:'Managing Director',dept:'Board',doj:'2026-04-01',
-    gross:150000,basic:75000,hra:30000,pf:false,esi:false,pt:212,tds:12000,pan:'ABKPJ4471C',
-    bank:'PNB ••••4471',mobile:'+91-94250-00001',status:'Active'},
-   {id:'E2',code:'KA-002',name:'Ravi Yadav',desig:'Site Engineer / Supervisor',dept:'Projects',doj:'2026-04-05',
-    gross:32000,basic:16000,hra:6400,pf:true,esi:false,pt:208,tds:0,pan:'BXYPY2210H',
-    bank:'SBI ••••2210',mobile:'+91-99770-00002',status:'Active'},
-   {id:'E3',code:'KA-003',name:'Pooja Sharma',desig:'Junior Accountant',dept:'Finance',doj:'2026-04-10',
-    gross:22000,basic:11000,hra:4400,pf:true,esi:true,pt:167,tds:0,pan:'CDXPS9932L',
-    bank:'HDFC ••••9932',mobile:'+91-88170-00003',status:'Active'},
-   {id:'E4',code:'KA-004',name:'Imran Khan',desig:'Draftsman / CAD Operator',dept:'Projects',doj:'2026-05-01',
-    gross:24000,basic:12000,hra:4800,pf:true,esi:true,pt:167,tds:0,pan:'DEFPK1177M',
-    bank:'BOI ••••1177',mobile:'+91-97550-00004',status:'Active'},
-   {id:'E5',code:'KA-005',name:'Sunita Verma',desig:'Admin / Office Assistant',dept:'Admin',doj:'2026-06-01',
-    gross:16000,basic:8000,hra:3200,pf:true,esi:true,pt:125,tds:0,pan:'EFGPV5540N',
-    bank:'PNB ••••5540',mobile:'+91-93000-00005',status:'Active'}
-  ],
-  labour:[
-   {id:'L1',code:'W-01',name:'Aliram Kol',cat:'Mistri',rate:700,contractor:'P4',aadhaarRef:'KYC/2026/01',
-    mobile:'+91-98931-70001',status:'Active'},
-   {id:'L2',code:'W-02',name:'Jaspal Singh',cat:'Mistri',rate:700,contractor:'P4',aadhaarRef:'KYC/2026/02',
-    mobile:'+91-98931-70002',status:'Active'},
-   {id:'L3',code:'W-03',name:'Raju Tulsi',cat:'Reja',rate:400,contractor:'P4',aadhaarRef:'KYC/2026/03',
-    mobile:'',status:'Active'},
-   {id:'L4',code:'W-04',name:'Gaur Prasad',cat:'Beldar',rate:500,contractor:'P4',aadhaarRef:'KYC/2026/04',
-    mobile:'',status:'Active'},
-   {id:'L5',code:'W-05',name:'Ramesh Ahirwar',cat:'Beldar',rate:500,contractor:'P4',aadhaarRef:'KYC/2026/05',
-    mobile:'',status:'Active'},
-   {id:'L6',code:'W-06',name:'Sukhlal Yadav',cat:'Reja',rate:400,contractor:'P4',aadhaarRef:'KYC/2026/06',
-    mobile:'',status:'Active'},
-   {id:'L7',code:'W-07',name:'Munna Lal',cat:'Beldar',rate:500,contractor:'P14',aadhaarRef:'KYC/2026/07',
-    mobile:'',status:'Active'},
-   {id:'L8',code:'W-08',name:'Shiv Kumar',cat:'Operator',rate:900,contractor:'',aadhaarRef:'KYC/2026/08',
-    mobile:'+91-98931-70008',status:'Active'},
-   {id:'L9',code:'W-09',name:'Dinesh Patel',cat:'Bar Bender',rate:750,contractor:'P14',aadhaarRef:'KYC/2026/09',
-    mobile:'',status:'Active'},
-   {id:'L10',code:'W-10',name:'Kamla Bai',cat:'Reja',rate:400,contractor:'P4',aadhaarRef:'KYC/2026/10',
-    mobile:'',status:'Active'}
-  ],
-  items:[
-   {id:'I1',code:'CEM-OPC53',name:'Cement OPC 53 Grade (50 kg bag)',unit:'Bag',hsn:'2523',gst:18,
-    stockAc:'1301',expAc:'5101',rate:395,reorder:200,opening:472},
-   {id:'I2',code:'STL-TMT12',name:'TMT Bar Fe500D 12 mm',unit:'MT',hsn:'7214',gst:18,
-    stockAc:'1302',expAc:'5102',rate:58500,reorder:2,opening:12.68},
-   {id:'I3',code:'STL-TMT08',name:'TMT Bar Fe500D 8 mm',unit:'MT',hsn:'7214',gst:18,
-    stockAc:'1302',expAc:'5102',rate:59200,reorder:1.5,opening:0},
-   {id:'I4',code:'AGG-20MM',name:'Coarse Aggregate 20 mm (Gitti)',unit:'Cum',hsn:'2517',gst:5,
-    stockAc:'1303',expAc:'5103',rate:1150,reorder:20,opening:62},
-   {id:'I5',code:'SND-RIV',name:'River Sand (Narmada)',unit:'Cum',hsn:'2505',gst:5,
-    stockAc:'1303',expAc:'5103',rate:1850,reorder:15,opening:13.3},
-   {id:'I6',code:'MUR-FILL',name:'Murum / Earth Fill Material',unit:'Cum',hsn:'2505',gst:5,
-    stockAc:'1304',expAc:'5104',rate:320,reorder:100,opening:150},
-   {id:'I7',code:'BRK-CLAY',name:'Clay Bricks — Class A',unit:'Nos',hsn:'6904',gst:5,
-    stockAc:'1305',expAc:'5105',rate:8.5,reorder:5000,opening:0},
-   {id:'I8',code:'BND-WIRE',name:'Binding Wire 18 SWG',unit:'Kg',hsn:'7217',gst:18,
-    stockAc:'1309',expAc:'5110',rate:82,reorder:50,opening:0},
-   {id:'I9',code:'DSL-HSD',name:'High Speed Diesel',unit:'Litre',hsn:'2710',gst:0,
-    stockAc:'1310',expAc:'5412',rate:94.5,reorder:200,opening:0},
-   {id:'I10',code:'SHT-PLY',name:'Shuttering Ply 12 mm (8x4)',unit:'Nos',hsn:'4412',gst:18,
-    stockAc:'1309',expAc:'5110',rate:1450,reorder:20,opening:0},
-   {id:'I11',code:'PPE-KIT',name:'Safety Kit (Helmet + Boots + Jacket)',unit:'Set',hsn:'6506',gst:18,
-    stockAc:'1309',expAc:'5206',rate:640,reorder:10,opening:0}
-  ],
+  sites:[], parties:[], machines:[], staff:[], labour:[], items:[],
   machineLogs:[], trips:[], attendance:[], payroll:[], grn:[], issues:[],
   purchases:[], sales:[], vouchers:[], audit:[],
   seq:{PV:0,RV:0,CV:0,JV:0,PB:0,SB:0,MB:0,TS:0,MR:0,GR:0,MI:0,SAL:0}
@@ -748,13 +628,19 @@ function save(){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){ to
 function load(){
   let raw=null; try{ raw=localStorage.getItem(KEY); }catch(e){}
   if(raw){ try{ S=JSON.parse(raw); }catch(e){ S=null; } }
-  if(!S||!S.company){ S=seed(); demo(); save(); }
+  if(!S){ S=seed(); save(); }
   if(!S.ui) S.ui={site:'ALL'};
-  if(S.company&&!S.company.logoMark){ S.company.logoMark=KA_LOGO_MARK; S.company.logoFull=KA_LOGO_FULL;
-    if(S.company.whatsapp===undefined) S.company.whatsapp=''; if(S.company.upi===undefined) S.company.upi=''; save(); }
+  if(!S.company) S.company={name:'Your Company',gstin:'',pan:'',signatory:'',designation:'Director',logoMark:KA_LOGO_MARK,logoFull:KA_LOGO_FULL,whatsapp:'',upi:''};
+  if(!S.company.logoMark){ S.company.logoMark=KA_LOGO_MARK; S.company.logoFull=KA_LOGO_FULL; }
+  if(S.company.whatsapp===undefined) S.company.whatsapp='';
+  if(S.company.upi===undefined) S.company.upi='';
+  /* ensure all arrays exist so new features don't crash on old saves */
+  ['sites','parties','machines','staff','labour','items','machineLogs','trips',
+   'attendance','payroll','grn','issues','purchases','sales','vouchers','audit'].forEach(k=>{ if(!S[k]) S[k]=[]; });
+  if(!S.seq) S.seq={PV:0,RV:0,CV:0,JV:0,PB:0,SB:0,MB:0,TS:0,MR:0,GR:0,MI:0,SAL:0};
   return S;
 }
-const USER=()=>'Naveen Joshi (Director)';
+const USER=()=>S.company?.signatory||'User';
 function logAudit(op,entity,ref,detail){
   S.audit.push({id:uid(),ts:new Date().toISOString(),user:USER(),op:op,entity:entity,ref:ref||'',detail:detail||''});
   if(S.audit.length>4000) S.audit.splice(0,S.audit.length-4000);
@@ -1128,212 +1014,6 @@ const D=(m,d)=>'2026-'+String(m).padStart(2,'0')+'-'+String(d).padStart(2,'0');
 const dim={4:30,5:31,6:30,7:31,8:20};
 const dow=s=>new Date(s+'T00:00:00Z').getUTCDay();
 
-function demo(){
- /* ---- 1. Machine log book ---- */
- const ops=['Shiv Kumar','Ramlal Ahirwar'];
- const tasks=['Soil cutting & excavation — retaining wall foundation','Pond / low-land shaping and dressing',
-   'Trench excavation for pipe crossing','Levelling and grading of plot area','Loading & stacking of excavated soil',
-   'Black cotton soil removal and disposal','Boundary wall footing excavation','Backfilling and murum spreading'];
- let hrs1=0;
- for(let m=4;m<=6;m++) for(let d=1;d<=dim[m];d++){
-   const dt=D(m,d); if(dt>'2026-06-05') break;
-   if(dow(dt)===0) continue; if(rnd()<0.22) continue;
-   const h=R2(6+rnd()*3.5);
-   hrs1+=h;
-   S.machineLogs.push({id:uid(),date:dt,machine:'M1',site:'S1',operator:pick(ops),
-     hmStart:R2(1482+hrs1-h),hmEnd:R2(1482+hrs1),hours:h,diesel:0,work:pick(tasks),billed:''});
- }
- /* trim to match the approved measurement abstract of 428.74 machine hours */
- (function(){ const cur=R2(S.machineLogs.filter(l=>l.machine==='M1').reduce((s,l)=>s+l.hours,0));
-   const last=S.machineLogs.filter(l=>l.machine==='M1').slice(-1)[0];
-   last.hours=R2(last.hours+(428.74-cur)); last.hmEnd=R2(last.hmStart+last.hours); })();
- /* second stretch, still unbilled */
- for(let m=6;m<=8;m++) for(let d=1;d<=dim[m];d++){
-   const dt=D(m,d); if(dt<'2026-06-08'||dt>'2026-08-20') continue;
-   if(dow(dt)===0) continue; if(rnd()<0.35) continue;
-   const h=R2(5+rnd()*4);
-   S.machineLogs.push({id:uid(),date:dt,machine:'M1',site:'S1',operator:pick(ops),
-     hmStart:0,hmEnd:0,hours:h,diesel:0,work:pick(tasks),billed:''});
- }
- for(let m=6;m<=8;m++) for(let d=1;d<=dim[m];d++){
-   const dt=D(m,d); if(dt<'2026-06-20'||dt>'2026-08-20') continue;
-   if(dow(dt)===0) continue; if(rnd()<0.5) continue;
-   const h=R2(4+rnd()*4);
-   S.machineLogs.push({id:uid(),date:dt,machine:'M2',site:'S3',operator:'Shiv Kumar',
-     hmStart:0,hmEnd:0,hours:h,diesel:R2(h*7.5),work:pick(tasks),billed:''});
- }
- S.machineLogs.sort((a,b)=>a.date<b.date?-1:1);
-
- /* ---- 2. JCB bill received from XX Firm (mirrors the approved tax invoice) ---- */
- jcbBill({dir:'IN',date:'2026-06-06',party:'P1',site:'S1',machine:'M1',from:'2026-04-01',to:'2026-06-05',
-   rate:2200,adj:-7.66,gstRate:18,vendorRef:'XXF/KA/26-27/001',wo:'KA/PCG/SITE/WO/26-27/JCB-001'});
-
- /* ---- 3. Murum / earth trip sheet ---- */
- const srcs=['Barela Khadan (Permit MP/JBP/MUR/26-27/114)','Bilhari Borrow Pit','Tilhari Cutting Area'];
- for(let m=4;m<=8;m++) for(let d=1;d<=dim[m];d++){
-   const dt=D(m,d); if(dow(dt)===0) continue; if(rnd()<0.68) continue;
-   const site=rnd()<0.62?'S1':'S3';
-   const n=2+Math.floor(rnd()*4);
-   for(let i=0;i<n;i++) S.trips.push({id:uid(),date:dt,site:site,party:'P8',machine:rnd()<0.5?'M3':'M4',
-     tipper:rnd()<0.5?'MP20-HA-2201':'MP20-HA-3390',src:srcs[0],cum:R2(4.5+rnd()*2),
-     chalan:'CH-'+(1000+S.trips.length),billed:''});
- }
- S.trips.sort((a,b)=>a.date<b.date?-1:1);
- murumBill({dir:'IN',date:'2026-06-30',party:'P8',site:'S1',from:'2026-04-01',to:'2026-06-30',
-   basis:'Cum',rate:320,gstRate:5,vendorRef:'SE/KA/26-27/017',royalty:28400,permit:'MP/JBP/MUR/26-27/114'});
-
- /* ---- 4. Daily muster roll ---- */
- const crewS1=['L1','L4','L5','L8','L9'], crewS2=['L2','L3','L6','L10'], crewS3=['L7','L5'];
- const work=['Retaining wall shuttering & steel binding','Boundary wall brickwork','Column & plinth beam casting',
-   'Curing and finishing','Excavation support & site clearing','Pipe crossing excavation','Murum spreading & compaction'];
- function muster(from,to,crew,site){
-   for(let m=4;m<=8;m++) for(let d=1;d<=dim[m];d++){
-     const dt=D(m,d); if(dt<from||dt>to) continue; if(dow(dt)===0) continue;
-     crew.forEach(w=>{ if(rnd()<0.13) return; const wk=WKR(w);
-       S.attendance.push({id:uid(),date:dt,site:site,worker:w,days:rnd()<0.08?0.5:1,rate:wk.rate,
-         ot:rnd()<0.16?2:0,work:pick(work),billed:''}); });
-   }
- }
- muster('2026-04-06','2026-08-20',crewS1,'S1');
- muster('2026-05-11','2026-08-20',crewS2,'S2');
- muster('2026-06-15','2026-08-20',crewS3,'S3');
- S.attendance.sort((a,b)=>a.date<b.date?-1:1);
- /* weekly labour payment bills */
- const wk=[['2026-04-06','2026-04-11'],['2026-04-13','2026-04-18'],['2026-04-20','2026-04-25'],['2026-04-27','2026-05-02'],
-  ['2026-05-04','2026-05-09'],['2026-05-11','2026-05-16'],['2026-05-18','2026-05-23'],['2026-05-25','2026-05-30'],
-  ['2026-06-01','2026-06-06'],['2026-06-08','2026-06-13'],['2026-06-15','2026-06-20'],['2026-06-22','2026-06-27'],
-  ['2026-06-29','2026-07-04'],['2026-07-06','2026-07-11'],['2026-07-13','2026-07-18'],['2026-07-20','2026-07-25'],
-  ['2026-07-27','2026-08-01'],['2026-08-03','2026-08-08']];
- ['S1','S2','S3'].forEach(st=>wk.forEach(w=>{
-   try{ musterBill({date:w[1],site:st,from:w[0],to:w[1],payAc:'1102',
-     advances:rnd()<0.2?[{worker:pick(['L1','L2','L4']),amt:1500}]:[]}); }catch(e){}
- }));
-
- /* ---- 5. Material purchases (GRN) ---- */
- const grns=[
-  ['2026-04-08','P5','S1',[['I1',400,395]],'UT/26-27/8841'],
-  ['2026-04-14','P6','S1',[['I2',6.2,58500]],'JSW/MP/26-27/2210'],
-  ['2026-04-22','P7','S1',[['I4',48,1150],['I5',26,1850]],'NSA/26-27/0912'],
-  ['2026-05-06','P5','S1',[['I1',300,398]],'UT/26-27/9107'],
-  ['2026-05-19','P6','S3',[['I2',4.4,59100],['I3',2.6,59200]],'JSW/MP/26-27/2661'],
-  ['2026-06-02','P7','S1',[['I4',36,1180],['I5',18,1900]],'NSA/26-27/1188'],
-  ['2026-06-17','P5','S2',[['I1',220,402]],'UT/26-27/9455'],
-  ['2026-06-28','P7','S2',[['I7',22000,8.5]],'NSA/26-27/1290'],
-  ['2026-07-09','P6','S1',[['I2',5.8,60200]],'JSW/MP/26-27/3014'],
-  ['2026-07-16','P7','S3',[['I4',30,1195],['I5',14,1925]],'NSA/26-27/1402'],
-  ['2026-07-24','P5','S1',[['I1',350,405],['I8',120,84]],'UT/26-27/9788'],
-  ['2026-08-05','P7','S1',[['I10',40,1450],['I11',18,640]],'NSA/26-27/1533'],
-  ['2026-08-13','P6','S1',[['I2',4.1,60800]],'JSW/MP/26-27/3390']
- ];
- grns.forEach(g=>addGRN({date:g[0],party:g[1],site:g[2],vendorRef:g[4],
-   lines:g[3].map(l=>({item:l[0],qty:l[1],rate:l[2]}))}));
- /* issues to site */
- const iss=[
-  ['2026-04-20','S1',[['I1',180],['I2',2.4]],'RCC retaining wall — raft & first lift'],
-  ['2026-05-12','S1',[['I1',150],['I4',30],['I5',16]],'Plinth beam & column casting'],
-  ['2026-06-05','S1',[['I1',210],['I2',3.6],['I4',24]],'Retaining wall second & third lift'],
-  ['2026-06-22','S2',[['I1',120],['I7',14000]],'Boundary wall brickwork — Barela'],
-  ['2026-07-11','S3',[['I2',3.1],['I4',18],['I5',9]],'Green Valley boundary footing'],
-  ['2026-07-28','S1',[['I1',260],['I8',70],['I10',22]],'Slab shuttering and casting'],
-  ['2026-08-12','S1',[['I1',190],['I2',2.9],['I4',20],['I5',11]],'Column casting — block B']
- ];
- iss.forEach(x=>addIssue({date:x[0],site:x[1],lines:x[2].map(l=>({item:l[0],qty:l[1]})),purpose:x[3]}));
-
- /* ---- 6. Service & overhead bills ---- */
- const svc=[
-  ['2026-04-30','P10','S1','5406',18,'194C','Site security — April 2026 (2 guards)',24000,true],
-  ['2026-05-31','P10','S1','5406',18,'194C','Site security — May 2026 (2 guards)',24000,true],
-  ['2026-06-30','P10','S1','5406',18,'194C','Site security — June 2026 (2 guards)',24000,true],
-  ['2026-07-31','P10','S1','5406',18,'194C','Site security — July 2026 (2 guards)',24000,true],
-  ['2026-05-15','P9','S1','5403',5,'194C','Inward freight — steel & cement consignments',46000,true],
-  ['2026-07-05','P9','S3','5403',5,'194C','Inward freight — aggregates to Bilhari',31000,true],
-  ['2026-06-12','P12','S1','5401',18,'194I','Vibratory soil compactor hire — 22 days',88000,false],
-  ['2026-05-20','P13','S1','5402',18,'194I','Shuttering plate & prop rent — May cycle',124000,false],
-  ['2026-07-18','P13','S1','5402',18,'194I','Shuttering plate & prop rent — July cycle',96000,false],
-  ['2026-06-25','P11','S4','6303',18,'194J','GST advisory, TDS return Q1 and books review',65000,false],
-  ['2026-08-10','P11','S4','6301',18,'194J','Statutory audit fee — FY 2025-26 (final)',85000,false],
-  ['2026-04-15','P14','S1','5301',18,'194C','Civil sub-contract — RCC retaining wall RA-1',480000,false],
-  ['2026-06-18','P14','S1','5301',18,'194C','Civil sub-contract — RCC retaining wall RA-2',620000,false],
-  ['2026-08-04','P14','S3','5301',18,'194C','Civil sub-contract — Green Valley boundary RA-1',285000,false],
-  ['2026-04-30','P15','S1','5404',0,'','Site electricity — temporary connection Apr',18400,false],
-  ['2026-06-30','P15','S1','5404',0,'','Site electricity — temporary connection Jun',21200,false],
-  ['2026-08-15','P15','S1','5404',0,'','Site electricity — temporary connection Aug',23800,false]
- ];
- svc.forEach(x=>buildVendorBill({date:x[0],party:x[1],site:x[2],expAc:x[3],gstRate:x[4],tdsSec:x[5],
-   narration:x[6],taxable:x[7],rcm:x[8],kind:'Service'}));
- /* labour contractor running bills */
- [['2026-05-16','P4','S2',186000,'Labour contract RA-1 — Barela plinth & brickwork'],
-  ['2026-06-20','P4','S2',214000,'Labour contract RA-2 — Barela boundary wall'],
-  ['2026-07-22','P4','S1',268000,'Labour contract RA-3 — Tilhari RCC retaining wall'],
-  ['2026-08-14','P4','S1',192000,'Labour contract RA-4 — Tilhari slab & columns']
- ].forEach(x=>buildVendorBill({date:x[0],party:x[1],site:x[2],expAc:'5203',gstRate:0,tdsSec:'194C',
-   narration:x[4],taxable:x[3],kind:'Labour Contract'}));
-
- /* ---- 7. Client RA bills ---- */
- [['2026-04-28','P2','S1','4101',18,3850000,5,1,'RA Bill 1 — Tilhari site development, excavation and retaining wall foundation'],
-  ['2026-05-30','P2','S1','4101',18,4260000,5,1,'RA Bill 2 — Retaining wall RCC up to +3.0 m, plinth beams'],
-  ['2026-06-29','P3','S2','4101',18,1180000,0,1,'RA Bill 1 — Barela S.D.C. plinth, columns and boundary wall'],
-  ['2026-07-01','P2','S1','4101',18,3980000,5,1,'RA Bill 3 — Retaining wall completion, backfilling and murum compaction'],
-  ['2026-07-27','P2','S3','4101',18,1640000,5,1,'RA Bill 1 — Green Valley boundary wall and earthwork'],
-  ['2026-08-08','P2','S1','4101',18,4420000,5,1,'RA Bill 4 — Superstructure RCC, slab casting block A']
- ].forEach(x=>buildSalesBill({date:x[0],party:x[1],site:x[2],revAc:x[3],gstRate:x[4],taxable:x[5],
-   retPct:x[6],tdsPct:x[7],narration:x[8],kind:'RA Bill',hsn:'995432',unit:'Lot',qty:1,rate:x[5]}));
- /* JCB hire billed out + murum sold out */
- jcbBill({dir:'OUT',date:'2026-08-18',party:'P3',site:'S3',machine:'M2',from:'2026-06-20',to:'2026-08-18',
-   rate:1950,adj:0,gstRate:18,retPct:0,tdsPct:1,wo:'BAR/SDC/WO/26-27/07'});
- murumBill({dir:'OUT',date:'2026-08-19',party:'P3',site:'S3',from:'2026-04-01',to:'2026-08-19',
-   basis:'Cum',rate:420,gstRate:5,retPct:0,tdsPct:1});
-
- /* ---- 8. Payroll ---- */
- [['Apr 2026','2026-05-05'],['May 2026','2026-06-05'],['Jun 2026','2026-07-05'],['Jul 2026','2026-08-05']]
-   .forEach(m=>{try{runPayroll(m[0],m[1]);}catch(e){}});
-
- /* ---- 9. Settlements ---- */
- S.purchases.filter(b=>b.date<='2026-07-05').forEach((b,i)=>{ if(i%4!==3) try{payBill(b.id,
-   new Date(new Date(b.date).getTime()+((b.tdsSec==='194J')?18:12)*864e5).toISOString().slice(0,10),'NEFT','1103');}catch(e){} });
- S.sales.filter(b=>b.date<='2026-07-01').forEach(b=>{ try{receiveBill(b.id,
-   new Date(new Date(b.date).getTime()+26*864e5).toISOString().slice(0,10),'RTGS','1103');}catch(e){} });
- /* statutory deposits */
- [['2026-05-07','Apr'],['2026-06-07','May'],['2026-07-07','Jun'],['2026-08-07','Jul']].forEach(x=>{
-   const b=balances(x[0]);
-   const secs=[['2206','194C'],['2207','194J'],['2208','194I'],['2210','192']];
-   const lines=[]; let t=0;
-   secs.forEach(s=>{ const v=-b[s[0]].bal; if(v>1){ lines.push({ac:s[0],dr:R2(v),cr:0,note:'Challan 281 — '+s[1]}); t+=v; } });
-   if(t>1){ lines.push({ac:'1103',dr:0,cr:R2(t),note:'TDS deposited — '+x[1]+' 2026'});
-     postVoucher({type:'PV',date:x[0],narration:'TDS deposited for '+x[1]+' 2026 vide Challan ITNS-281',lines:lines,site:'S4'}); }
- });
- /* office overheads */
- [['2026-04-05','6201',35000,'Head office rent — April'],['2026-05-05','6201',35000,'Head office rent — May'],
-  ['2026-06-05','6201',35000,'Head office rent — June'],['2026-07-05','6201',35000,'Head office rent — July'],
-  ['2026-08-05','6201',35000,'Head office rent — August'],
-  ['2026-04-18','6206',8400,'Printing, letterheads and site registers'],
-  ['2026-05-22','6205',4720,'Internet and mobile — Jio corporate plan'],
-  ['2026-06-11','6211',14160,'Zoho Books and AutoCAD subscription renewal'],
-  ['2026-07-14','6601',3860,'Bank charges and RTGS fees'],
-  ['2026-08-06','6305',12000,'ROC filing fees — DPT-3 and MSME-1'],
-  ['2026-05-28','5412',86000,'Diesel for site equipment — May'],
-  ['2026-07-12','5412',94500,'Diesel for site equipment — July'],
-  ['2026-06-09','5409',148000,'Contractor All Risk and Workmen Compensation policy']
- ].forEach(x=>postVoucher({type:'PV',date:x[0],narration:x[3],site:x[1]==='6201'?'S4':'S1',
-   lines:[{ac:x[1],dr:x[2],cr:0,note:x[3]},{ac:'1103',dr:0,cr:x[2],note:'Bank'}]}));
- /* term loan EMI on equipment finance */
- ['2026-04-10','2026-05-10','2026-06-10','2026-07-10','2026-08-10'].forEach(d=>{
-   postVoucher({type:'PV',date:d,narration:'Equipment finance EMI — PNB machinery loan',site:'S4',
-     lines:[{ac:'2402',dr:78000,cr:0,note:'Principal'},{ac:'6603',dr:34200,cr:0,note:'Interest'},
-            {ac:'1103',dr:0,cr:112200,note:'Auto-debit'}]});
- });
- /* imprest top-ups */
- ['2026-04-06','2026-05-04','2026-06-01','2026-07-06','2026-08-03'].forEach(d=>{
-   postVoucher({type:'CV',date:d,narration:'Site imprest top-up — cash withdrawn for labour payment',site:'S1',
-     lines:[{ac:'1102',dr:120000,cr:0,note:'Site imprest'},{ac:'1103',dr:0,cr:120000,note:'Cash withdrawal'}]});
- });
- /* GST payment for Q1 under QRMP */
- postVoucher({type:'PV',date:'2026-07-24',narration:'GST paid for Q1 FY 2026-27 (QRMP — GSTR-3B, MP Group 2 state)',site:'S4',
-   lines:[{ac:'2201',dr:820000,cr:0,note:'CGST output set-off'},{ac:'2202',dr:820000,cr:0,note:'SGST output set-off'},
-          {ac:'1501',dr:0,cr:342000,note:'CGST ITC utilised'},{ac:'1502',dr:0,cr:342000,note:'SGST ITC utilised'},
-          {ac:'1103',dr:0,cr:956000,note:'Cash ledger payment'}]});
- logAudit('C','System','—','Opening books created for FY 2026-27 · '+S.vouchers.length+' vouchers posted');
-}
 </script>
 
 <script>
@@ -1601,15 +1281,34 @@ function unbRow(t,v,n,act){
 <script>
 /* ================= MACHINE LOG (JCB / EARTHMOVING) ================= */
 function P_mlog(){
-  const rows=S.machineLogs.filter(l=>siteOK(l.site)).slice().sort((a,b)=>a.date<b.date?1:-1);
+  /* ── machine-type tab: 'all' | 'roller' | 'jcb' ── */
+  const mtype=S.ui.mtype||'all';
+
+  /* Filter directly by the 'mtype' field saved on each log entry */
+  const allRows=S.machineLogs.filter(l=>siteOK(l.site)).slice().sort((a,b)=>a.date<b.date?1:-1);
+  const rows = mtype==='roller' ? allRows.filter(l=>l.mtype==='roller')
+              : mtype==='jcb'   ? allRows.filter(l=>l.mtype==='jcb')
+              : allRows;
+
   const unb=rows.filter(l=>!l.billed);
   const tot=R2(rows.reduce((s,l)=>s+l.hours,0)), untot=R2(unb.reduce((s,l)=>s+l.hours,0));
+
+  const typeLabel = mtype==='roller' ? 'Road Roller' : mtype==='jcb' ? 'JCB Machine' : 'All Machines';
+
   let h=pageHead('Machine Log Book','Measurement basis for every JCB and earthmoving bill · SAC 995433',
     '<button class="btn" onclick="expMlog()">Export CSV</button>'+
     '<button class="btn" onclick="jcbBillForm()">Raise work bill</button>'+
     '<button class="btn pri" onclick="mlogForm()">+ Log entry</button>');
+
+  /* ── machine-type tabs ── */
+  h+='<div class="tabs" style="margin-bottom:0">'
+    +'<button class="tab'+(mtype==='all'?' on':'')+'" onclick="S.ui.mtype=\'all\';render()">🔧 All Machines</button>'
+    +'<button class="tab'+(mtype==='roller'?' on':'')+'" onclick="S.ui.mtype=\'roller\';render()">🛞 Road Roller</button>'
+    +'<button class="tab'+(mtype==='jcb'?' on':'')+'" onclick="S.ui.mtype=\'jcb\';render()">🚜 JCB Machine</button>'
+    +'</div>';
+
   h+='<div class="tiles">'+
-   tile('a','Hours logged',fmtI(tot,2),rows.length+' entries this year')+
+   tile('a','Hours logged',fmtI(tot,2),rows.length+' entries · '+typeLabel)+
    tile('w','Unbilled hours',fmtI(untot,2),unb.length+' entries pending a bill')+
    tile('s','Machines deployed',String(new Set(rows.map(r=>r.machine)).size),'of '+S.machines.length+' in the register')+
    tile('g','Value at card rate',fmtC(rows.reduce((s,l)=>{const m=MACH(l.machine);return s+l.hours*(m?m.rate:0);},0)),'Hire rate × hours')+
@@ -1617,7 +1316,7 @@ function P_mlog(){
   h+='<div class="warnbox noprint" style="margin-bottom:16px"><span>⚑</span><div><b>Why this register matters.</b> '+
    'A JCB invoice without a machine log, hour-meter reading and site certification is the first thing a bank auditor or GST officer '+
    'questions. Every bill raised here carries its measurement abstract, so the invoice, the log and the MB entry always agree.</div></div>';
-  h+='<div class="card"><header><h3>Log entries</h3><span class="sub">Newest first</span></header>'+
+  h+='<div class="card"><header><h3>Log entries — '+esc(typeLabel)+'</h3><span class="sub">Newest first</span></header>'+
    tbl([{l:'Date',k:'date',f:r=>'<span class="mono">'+dmyS(r.date)+'</span>'},
         {l:'Machine',f:r=>{const m=MACH(r.machine);return m?'<b>'+esc(m.code)+'</b><div class="hint">'+esc(m.reg)+'</div>':'—';}},
         {l:'Site',f:r=>esc(scode(r.site))},
@@ -1628,10 +1327,11 @@ function P_mlog(){
         {l:'Status',f:r=>r.billed?'<span class="pill g">'+esc(r.billed)+'</span>':'<span class="pill w">Unbilled</span>'},
         {l:'',cls:'act',f:r=>r.billed?'':'<button class="btn sm gh" onclick="mlogForm(\''+r.id+'\')">Edit</button>'+
           '<button class="btn sm gh dngr" onclick="delRec(\'machineLogs\',\''+r.id+'\',\'Machine log\')">Del</button>'}],
-      rows,{emptyTitle:'No machine hours logged yet',empty:'Add a log entry for each day a machine works on site.'})+'</div>';
+      rows,{emptyTitle:'No entries for '+typeLabel,empty:'Add a log entry for each day a machine works on site.'})+'</div>';
   return h;
 }
 const MLOG_F=()=>[
+ {k:'mtype',l:'Machine category',t:'sel',req:1,opts:[['roller','🛞 Road Roller'],['jcb','🚜 JCB / Excavator']]},
  {k:'date',l:'Date',t:'date',req:1,def:today()},
  {k:'machine',l:'Machine',t:'sel',opts:optMach(),req:1},
  {k:'site',l:'Site',t:'sel',opts:optSites(),req:1},
@@ -1644,10 +1344,12 @@ const MLOG_F=()=>[
 ];
 function mlogForm(id){
   const r=id?S.machineLogs.find(x=>x.id===id):null;
-  openForm(r?'Edit machine log':'Machine log entry',MLOG_F(),r||{date:today(),site:S.ui.site!=='ALL'?S.ui.site:'S1'},o=>{
-    if(r){ Object.assign(r,o); logAudit('U','Machine Log',dmyS(o.date),MACH(o.machine).code+' · '+o.hours+' hrs'); }
+  /* default mtype to whatever tab is active */
+  const defMtype=(S.ui.mtype&&S.ui.mtype!=='all')?S.ui.mtype:'roller';
+  openForm(r?'Edit machine log':'Machine log entry',MLOG_F(),r||{date:today(),site:S.ui.site!=='ALL'?S.ui.site:'S1',mtype:defMtype},o=>{
+    if(r){ Object.assign(r,o); logAudit('U','Machine Log',dmyS(o.date),(MACH(o.machine)||{code:'?'}).code+' · '+o.hours+' hrs'); }
     else { const n={id:uid(),billed:'',...o}; S.machineLogs.push(n);
-      logAudit('C','Machine Log',dmyS(o.date),MACH(o.machine).code+' · '+o.hours+' hrs at '+scode(o.site)); }
+      logAudit('C','Machine Log',dmyS(o.date),(MACH(o.machine)||{code:'?'}).code+' · '+o.hours+' hrs at '+scode(o.site)); }
   });
 }
 function jcbBillForm(){
@@ -3469,7 +3171,8 @@ function P_m_machines(){
 }
 const MACH_F=()=>[
  {k:'code',l:'Machine code',t:'text',req:1},{k:'name',l:'Machine name',t:'text',req:1,w:2},
- {k:'type',l:'Type',t:'sel',opts:['Backhoe Loader','Excavator','Tipper','Mixer','Roller','Crane','Other']},
+ {k:'cat',l:'Log book category',t:'sel',opts:[['','— unassigned —'],['roller','🛞 Road Roller'],['jcb','🚜 JCB / Excavator']],hint:'Controls which tab this machine appears under in the Machine Log'},
+ {k:'type',l:'Type',t:'sel',opts:['Backhoe Loader','Excavator','Road Roller','Roller','Tipper','Mixer','Crane','Other']},
  {k:'reg',l:'Registration number',t:'text'},
  {k:'own',l:'Ownership',t:'sel',opts:['Owned','Hired'],req:1},
  {k:'owner',l:'Owner / hire contractor',t:'sel',opts:optAll(),blank:'— company owned —'},
@@ -3627,8 +3330,8 @@ function P_settings(){
    '<div class="row" style="margin-top:14px"><button class="btn pri" onclick="backupJSON()">Download backup</button>'+
    '<label class="btn" style="cursor:pointer">Restore from backup<input type="file" accept=".json" style="display:none" onchange="restoreJSON(this)"></label></div>'+
    '<div class="sep"></div>'+
-   '<button class="btn dngr" onclick="resetBooks()">Reset to opening demo data</button>'+
-   '<p class="hint" style="margin-top:6px">Resetting is itself logged in the audit trail and cannot remove the record that a reset occurred.</p>'+
+   '<button class="btn dngr" onclick="resetBooks()">⚠ Reset &amp; clear all data</button>'+
+   '<p class="hint" style="margin-top:6px">Permanently deletes everything from this browser. Download a backup first. The reset event itself is logged in the audit trail.</p>'+
    '</div></div></div>';
   h+='<div class="card" style="margin-top:16px"><header><h3>What this system covers</h3></header><div class="body">'+
    '<p class="hint" style="max-width:80ch">Nirman Ledger keeps the construction books of Korien Aureate Private Limited under the '+
@@ -3674,10 +3377,10 @@ function restoreJSON(inp){
   rd.readAsText(f);
 }
 function resetBooks(){
-  if(!confirm('This clears all data in this browser and reloads the FY 2026-27 opening demo books. Continue?')) return;
+  if(!confirm('This will permanently delete ALL data in this browser and start fresh. Are you sure?\n\nDownload a backup first if you want to keep your current data.')) return;
   try{ localStorage.removeItem(KEY); }catch(e){}
-  S=seed(); demo(); logAudit('C','System','—','Books reset by user to opening demo data'); save(); render();
-  toast('Books reset');
+  S=seed(); logAudit('C','System','—','Books reset to blank by user'); save(); render();
+  toast('Books reset to blank');
 }
 </script>
 
@@ -4532,6 +4235,15 @@ function aiRenderRegisterReview(){
             </select>
           </div>`:''}
 
+          ${isMlog?`<div style="margin-top:10px">
+            <div class="eyebrow" style="margin-bottom:6px">Machine Category</div>
+            <div class="hint" style="margin-bottom:4px">Which tab should these entries appear under?</div>
+            <select class="in" onchange="AIS.draft._importMtype=this.value">
+              <option value="roller"${(draft._importMtype||'roller')==='roller'?' selected':''}>🛞 Road Roller</option>
+              <option value="jcb"${draft._importMtype==='jcb'?' selected':''}>🚜 JCB / Excavator</option>
+            </select>
+          </div>`:''}
+
           <div class="sep"></div>
           <div style="display:flex;flex-direction:column;gap:8px">
             <button class="btn pri" onclick="aiImportRegister()"
@@ -4610,22 +4322,42 @@ function aiImportRegister(){
     toast('✅ Imported '+imported+' trip entries into Trip Sheet'+(skipped?' ('+skipped+' skipped)':''));
 
   } else if(docType === 'jcb_machine_log'){
+    const importMtype = draft._importMtype || 'roller';
+    // Find the machine to assign — prefer one matching the mtype category
+    const ROLLER_TYPES=['Roller','Road Roller','Compactor'];
+    const JCB_TYPES=['Backhoe Loader','Excavator'];
+    function findMachine(item){
+      // 1. try to match by name from AI
+      const byName = S.machines.find(m=>m.name===item.machine||m.name===item.partyName);
+      if(byName) return byName.id;
+      // 2. try to match by mtype category field
+      const byCat = S.machines.find(m=>(m.cat||'')===importMtype);
+      if(byCat) return byCat.id;
+      // 3. try by type keyword
+      const byType = importMtype==='roller'
+        ? S.machines.find(m=>ROLLER_TYPES.some(t=>((m.type||'')+'|'+(m.name||'')).toLowerCase().indexOf(t.toLowerCase())>=0))
+        : S.machines.find(m=>JCB_TYPES.some(t=>((m.type||'')+'|'+(m.name||'')).toLowerCase().indexOf(t.toLowerCase())>=0));
+      if(byType) return byType.id;
+      // 4. fallback to first machine
+      return S.machines[0]?.id || '';
+    }
     items.forEach(item=>{
       if(!item.date){ skipped++; return; }
-      const machId = S.machines.find(m=>m.name===item.machine||m.name===item.partyName)?.id || S.machines[0]?.id || '';
+      const machId = findMachine(item);
       const hrs = parseFloat(item.hours)||0;
       const open = parseFloat(item.openingReading)||0;
       const close = parseFloat(item.closingReading)||0;
       S.machineLogs.push({
         id      : uid(),
         date    : item.date,
+        mtype   : importMtype,
         machine : machId,
         site    : item.site || site,
         hours   : hrs,
-        opening : open,
-        closing : close,
+        hmStart : open,
+        hmEnd   : close,
         operator: item.partyName||item.machine||'',
-        notes   : item.remarks || '',
+        work    : item.remarks || '',
         billed  : ''
       });
       imported++;
@@ -4933,6 +4665,39 @@ const PAGES={
  audit:P_audit, settings:P_settings,
  aiscan:P_aiscan
 };
+
+/* ── Password lock ── */
+const APP_PWD='Peecee';
+function tryUnlock(){
+  const v=document.getElementById('lockInput').value;
+  if(v===APP_PWD){
+    document.getElementById('lockScreen').style.display='none';
+    document.getElementById('lockInput').value='';
+    document.getElementById('lockErr').textContent='';
+  } else {
+    document.getElementById('lockErr').textContent='Incorrect password. Try again.';
+    document.getElementById('lockInput').value='';
+    document.getElementById('lockInput').focus();
+  }
+}
+function showLock(){
+  const ls=document.getElementById('lockScreen');
+  ls.style.display='flex';
+  setTimeout(()=>document.getElementById('lockInput').focus(),100);
+}
+
+/* ── Clear all data ── */
+function clearAllDataPrompt(){
+  const pwd=prompt('Enter password to clear ALL data:');
+  if(pwd===null) return;
+  if(pwd!==APP_PWD){ toast('Wrong password — data not cleared',true); return; }
+  if(!confirm('This will DELETE every entry, machine log, trip, muster, voucher and bill from this browser.\n\nThis CANNOT be undone. Are you absolutely sure?')) return;
+  try{ localStorage.removeItem(KEY); }catch(e){}
+  S=seed(); save();
+  toast('All data cleared. Fresh start.');
+  render();
+}
+
 function render(){
   renderNav();
   $('#crumb').innerHTML=esc(TITLES[S.ui.page||'dash']||'Dashboard')+
@@ -4957,6 +4722,7 @@ function boot(){
   if(!S.ui.page) S.ui.page='dash';
   updateBrandUI();
   render();
+  showLock();
 }
 boot();
 </script>

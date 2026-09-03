@@ -3409,10 +3409,10 @@ const AIS = {
   backendUrl: '/api/ai/document-scan',
   geminiKey  : (()=>{ try{ return localStorage.getItem('kapl_gemini_key')||''; }catch(e){ return ''; } })(),
   geminiModel : (()=>{ try{
-    const VALID=['gemini-3.6-flash','gemini-2.0-flash','gemini-2.0-flash-exp','gemini-1.5-flash','gemini-1.5-pro'];
+    const VALID=['gemini-2.5-flash','gemini-2.5-flash-lite','gemini-2.0-flash','gemini-2.0-flash-lite','gemini-1.5-flash','gemini-3.6-flash'];
     const saved=localStorage.getItem('kapl_gemini_model')||'';
-    return VALID.includes(saved) ? saved : 'gemini-3.6-flash';
-  }catch(e){ return 'gemini-3.6-flash'; } })(),
+    return VALID.includes(saved) ? saved : 'gemini-2.0-flash';
+  }catch(e){ return 'gemini-2.0-flash'; } })(),
   geminiModels: (()=>{ try{ const m=localStorage.getItem('kapl_gemini_models'); return m?JSON.parse(m):[]; }catch(e){ return []; } })(),
 };
 
@@ -3662,7 +3662,7 @@ Rules: dates as YYYY-MM-DD, Null/Nill=0, ditto marks=same value as row above, re
 
   const prompt = isLikelyMlog ? promptJCB : isLikelyMurum ? promptMurum : promptGeneral;
 
-  const model = AIS.geminiModel || 'gemini-3.6-flash';
+  const model = AIS.geminiModel || 'gemini-2.0-flash';
   const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
 
   // Only use responseMimeType on models that support it (flash variants)
@@ -3731,7 +3731,7 @@ Rules: dates as YYYY-MM-DD, Null/Nill=0, ditto marks=same value as row above, re
     // Last resort: try to extract JSON with a regex
     const m = rawText.match(/\{[\s\S]+\}/);
     if(m){ try{ parsed = JSON.parse(m[0]); }catch(e2){} }
-    if(!parsed) throw new Error('AI returned unreadable response. Please try again or switch to gemini-3.6-flash model.');
+    if(!parsed) throw new Error('AI returned unreadable response. Please try again or switch to gemini-2.0-flash model.');
   }
 
   // Normalise to our expected format
@@ -4002,8 +4002,8 @@ async function aiSaveGeminiKey(){
     if(!models.length) throw new Error('No compatible models found for this key');
     AIS.geminiKey=k;
     AIS.geminiModels=models;
-    // Prefer gemini-3.6-flash > gemini-2.0-flash > first available
-    const PREFERRED=['gemini-3.6-flash','gemini-2.0-flash','gemini-1.5-flash'];
+    // Prefer gemini-2.5-flash > gemini-2.0-flash > first available
+    const PREFERRED=['gemini-2.5-flash','gemini-2.0-flash','gemini-1.5-flash'];
     AIS.geminiModel = PREFERRED.find(p=>models.includes(p)) || models[0];
     try{ localStorage.setItem('kapl_gemini_key',k); }catch(e){}
     try{ localStorage.setItem('kapl_gemini_model',AIS.geminiModel); }catch(e){}
@@ -4024,7 +4024,7 @@ function aiRenderUploadZone(){
         <div style="flex:1"><b style="color:var(--good)">Gemini AI connected</b>
           <div class="hint">Model: ${AIS.geminiModel} · Free tier · No server needed</div></div>
         <select class="in" style="width:auto;font-size:12px;padding:4px 8px" onchange="AIS.geminiModel=this.value;try{localStorage.setItem('kapl_gemini_model',this.value);}catch(e){}">
-          ${['gemini-3.6-flash','gemini-2.0-flash','gemini-2.0-flash-exp','gemini-1.5-flash','gemini-1.5-pro'].map(m=>`<option value="${m}"${AIS.geminiModel===m?' selected':''}>${m}</option>`).join('')}
+          ${['gemini-2.5-flash','gemini-2.5-flash-lite','gemini-2.0-flash','gemini-2.0-flash-lite','gemini-1.5-flash','gemini-3.6-flash'].map(m=>`<option value="${m}"${AIS.geminiModel===m?' selected':''}>${m}</option>`).join('')}
         </select>
         <button class="btn sm dngr" onclick="AIS.geminiKey='';try{localStorage.removeItem('kapl_gemini_key');}catch(e){}renderAIScanPanel()">Change Key</button>
        </div>`

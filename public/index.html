@@ -4705,7 +4705,8 @@ async function waPoll(){
   try{
     const headers={'ngrok-skip-browser-warning':'1'};
     if(cfg.serverToken) headers['Authorization']='Bearer '+cfg.serverToken;
-    const resp=await fetch(cfg.serverUrl+'/messages?since='+(cfg.lastPoll||0),{headers});
+    const since = Math.max(0, (cfg.lastPoll||0) - 60000); // go back 60s to catch delayed messages
+    const resp=await fetch(cfg.serverUrl+'/messages?since='+since,{headers});
     if(!resp.ok) return;
     const msgs=await resp.json(); waCfgSet({lastPoll:Date.now()}); waInboxInit();
     for(const msg of (msgs||[])){

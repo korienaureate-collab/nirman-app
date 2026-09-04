@@ -4708,9 +4708,15 @@ async function waPoll(){
     const since = Math.max(0, (cfg.lastPoll||0) - 60000); // go back 60s to catch delayed messages
     const resp=await fetch(cfg.serverUrl+'/messages?since='+since,{headers});
     if(!resp.ok) return;
-    const msgs=await resp.json(); waCfgSet({lastPoll:Date.now()}); waInboxInit();
+    const msgs=await resp.json(); 
+    waCfgSet({lastPoll:Date.now()}); 
+    waInboxInit();
+    // Load seen IDs from localStorage
+    let seenIds; try{ seenIds=new Set(JSON.parse(localStorage.getItem('nirman_wa_seen')||'[]')); }catch(e){ seenIds=new Set(); }
+    let added=0;
     for(const msg of (msgs||[])){
-      if(S.waInbox.find(x=>x.waId===msg.id)) continue;
+      if(seenIds.has(msg.id)) continue; // strict dedup across refreshes
+      seenIds.add(msg.id);
       let entries=[]; let mediaB64=null;
       try{
         if(msg.mediaUrl){
@@ -4722,8 +4728,12 @@ async function waPoll(){
         entries=await waParseMessage(msg.text||msg.caption||'',mediaB64,msg.mediaType||'image/jpeg');
       }catch(e){ entries=[]; }
       entries.forEach(e=>S.waInbox.unshift({...e,id:uid(),waId:msg.id,status:'pending',source:'whatsapp',from:msg.from,ts:msg.ts||Date.now(),rawText:msg.text||msg.caption||''}));
+      added++;
     }
-    if(msgs?.length>0){ save(); render(); toast('📱 '+msgs.length+' new WhatsApp message(s)'); }
+    // Save seen IDs back to localStorage (keep last 1000)
+    const seenArr=Array.from(seenIds).slice(-1000);
+    try{ localStorage.setItem('nirman_wa_seen',JSON.stringify(seenArr)); }catch(e){}
+    if(added>0){ save(); render(); toast('📱 '+added+' new WhatsApp message(s)'); }
   }catch(e){ console.warn('WA poll:',e); }
 }
 function waStartPolling(){ if(WA_POLL_TIMER) clearInterval(WA_POLL_TIMER); const cfg=waCfg(); if(!cfg.serverUrl) return; waPoll(); WA_POLL_TIMER=setInterval(waPoll,30000); }

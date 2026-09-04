@@ -4717,8 +4717,9 @@ async function waPoll(){
     for(const msg of (msgs||[])){
       if(seenIds.has(msg.id)) continue; // strict dedup across refreshes
       seenIds.add(msg.id);
-      let entries=[]; let mediaB64=null;
+      let entries=[];
       try{
+        let mediaB64=null;
         if(msg.mediaUrl){
           try{
             const mr=await fetch(cfg.serverUrl+'/media?url='+encodeURIComponent(msg.mediaUrl),{headers:{'ngrok-skip-browser-warning':'1',...(cfg.serverToken?{'Authorization':'Bearer '+cfg.serverToken}:{})}});
@@ -4727,6 +4728,10 @@ async function waPoll(){
         }
         entries=await waParseMessage(msg.text||msg.caption||'',mediaB64,msg.mediaType||'image/jpeg');
       }catch(e){ entries=[]; }
+      // If AI parsing failed or returned nothing, add as raw voucher so it still shows
+      if(!entries||entries.length===0){
+        entries=[{type:'voucher',date:new Date().toISOString().slice(0,10),narr:msg.text||msg.caption||'(media)',amount:0,vtype:'PV'}];
+      }
       entries.forEach(e=>S.waInbox.unshift({...e,id:uid(),waId:msg.id,status:'pending',source:'whatsapp',from:msg.from,ts:msg.ts||Date.now(),rawText:msg.text||msg.caption||''}));
       added++;
     }

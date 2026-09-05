@@ -4689,7 +4689,13 @@ async function waParseMessage(rawText,mediaBase64,mediaType){
   const model=AIS?.geminiModel||'gemini-2.0-flash';
   const prompt=`Parse this WhatsApp message from a construction site worker in India. Return ONLY a JSON array, no markdown:
 [{"type":"mlog|trip|voucher","mtype":"jcb|roller","date":"YYYY-MM-DD","operator":"","hmStart":0,"hmEnd":0,"hours":0,"work":"","vehicle":"","material":"","trips":0,"rate":0,"amount":0,"narr":"","vtype":"PV","dr":"","cr":"","ref":""}]
-Rules: JCB/excavator→mlog+jcb, roller/compactor→mlog+roller, trips/murum/truck→trip, payment/rupees→voucher. hours=hmEnd-hmStart. Today=${new Date().toISOString().slice(0,10)}.
+Rules:
+- JCB/excavator/backhoe→mlog+jcb, roller/compactor→mlog+roller, trips/murum/sand/truck/tipper→trip
+- payment/rs/rupees/paid/expense/salary/wages/purchase/material/broom/labour→voucher
+- IMPORTANT: Extract rupee amount from "rs500","rs 700","₹500","500 rs" as the "amount" field number
+- For voucher narr: use person name + purpose e.g. "Om rs500"→narr="Om - payment", amount=500
+- "Misara rs700 for broom"→narr="Misara - broom purchase", amount=700
+- If no date use today: ${new Date().toISOString().slice(0,10)}
 Message: ${rawText||'(see image)'}`;
   const parts=[{text:prompt}];
   if(mediaBase64&&mediaType) parts.push({inlineData:{mimeType:mediaType,data:mediaBase64}});
@@ -4705,7 +4711,7 @@ async function waPoll(){
   try{
     const headers={'ngrok-skip-browser-warning':'1'};
     if(cfg.serverToken) headers['Authorization']='Bearer '+cfg.serverToken;
-    const since = Math.max(0, (cfg.lastPoll||0) - 60000); // go back 60s to catch delayed messages
+    const since = cfg.lastPoll||0;
     const resp=await fetch(cfg.serverUrl+'/messages?since='+since,{headers});
     if(!resp.ok) return;
     const msgs=await resp.json(); 

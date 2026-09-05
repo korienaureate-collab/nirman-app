@@ -4717,12 +4717,8 @@ async function waPoll(){
     const msgs=await resp.json(); 
     waCfgSet({lastPoll:Date.now()}); 
     waInboxInit();
-    // Load seen IDs from localStorage
-    let seenIds; try{ seenIds=new Set(JSON.parse(localStorage.getItem('nirman_wa_seen')||'[]')); }catch(e){ seenIds=new Set(); }
     let added=0;
     for(const msg of (msgs||[])){
-      if(seenIds.has(msg.id)) continue; // strict dedup across refreshes
-      seenIds.add(msg.id);
       let entries=[];
       try{
         let mediaB64=null;
@@ -4741,9 +4737,6 @@ async function waPoll(){
       entries.forEach(e=>S.waInbox.unshift({...e,id:uid(),waId:msg.id,status:'pending',source:'whatsapp',from:msg.from,ts:msg.ts||Date.now(),rawText:msg.text||msg.caption||''}));
       added++;
     }
-    // Save seen IDs back to localStorage (keep last 1000)
-    const seenArr=Array.from(seenIds).slice(-1000);
-    try{ localStorage.setItem('nirman_wa_seen',JSON.stringify(seenArr)); }catch(e){}
     if(added>0){ save(); render(); toast('📱 '+added+' new WhatsApp message(s)'); }
   }catch(e){ console.warn('WA poll:',e); }
 }

@@ -377,9 +377,12 @@ function fmtC(n){ n=Number(n)||0; const a=Math.abs(n), s=n<0?'-':'';
   return s+'₹'+fmtI(a,0);
 }
 const today=()=>new Date().toISOString().slice(0,10);
-function dmy(d){ if(!d) return '—'; const p=String(d).slice(0,10).split('-');
-  const M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  return p[2]+' '+M[+p[1]-1]+' '+p[0]; }
+function dmy(d){ if(!d) return '—';
+  // Handle both YYYY-MM-DD and DD/MM/YYYY formats
+  var s=String(d).slice(0,10);
+  var p; var M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  if(s.indexOf('/')>=0){ p=s.split('/'); return p[0]+' '+M[+p[1]-1]+' '+p[2]; }
+  p=s.split('-'); return (p[2]||'?')+' '+(M[+p[1]-1]||'?')+' '+(p[0]||'?'); }
 const dmyS=d=>d?String(d).slice(0,10).split('-').reverse().join('/'):'—';
 const daysBetween=(a,b)=>Math.round((new Date(b)-new Date(a))/864e5);
 const FY_START='2026-04-01', FY_END='2027-03-31';
@@ -404,6 +407,13 @@ function words(n){ n=Math.round(Math.abs(Number(n)||0)*100); const p=n%100; n=Ma
 /* ---------- misc ---------- */
 const esc=s=>String(s===undefined||s===null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+// Normalize any date format to YYYY-MM-DD for correct sorting
+function toISO(d){
+  if(!d) return '';
+  if(/^\d{4}-\d{2}-\d{2}/.test(d)) return d.slice(0,10);
+  var p=d.split('/'); if(p.length===3) return p[2]+'-'+p[1]+'-'+p[0];
+  return d;
+}
 const $=s=>document.querySelector(s);
 function toast(msg,bad){ const d=document.createElement('div'); d.className='tst'+(bad?' bad':''); d.textContent=msg;
   $('#toast').appendChild(d); setTimeout(()=>d.remove(),2800); }
@@ -615,7 +625,8 @@ function seed(){
   sites:[], parties:[], machines:[], staff:[], labour:[], items:[],
   machineLogs:[], trips:[], attendance:[], payroll:[], grn:[], issues:[],
   purchases:[], sales:[], vouchers:[], audit:[],
-  seq:{PV:0,RV:0,CV:0,JV:0,PB:0,SB:0,MB:0,TS:0,MR:0,GR:0,MI:0,SAL:0}
+  seq:{PV:0,RV:0,CV:0,JV:0,PB:0,SB:0,MB:0,TS:0,MR:0,GR:0,MI:0,SAL:0},
+  lb:{murum:[],gitti:[],msand:[],hava:[],dumper:[]}
  };
 }
 </script>
@@ -637,6 +648,33 @@ function load(){
   /* ensure all arrays exist so new features don't crash on old saves */
   ['sites','parties','machines','staff','labour','items','machineLogs','trips',
    'attendance','payroll','grn','issues','purchases','sales','vouchers','audit','waInbox'].forEach(k=>{ if(!S[k]) S[k]=[]; });
+  if(!S.lb) S.lb={};
+  ['murum','gitti','msand','hava','dumper'].forEach(function(k){ if(!S.lb[k]) S.lb[k]=[]; });
+  // Normalize ALL dates to ISO format (YYYY-MM-DD) and sort newest first
+  var _dateFixed=false;
+  if(S.machineLogs){
+    S.machineLogs.forEach(function(l){ var n=toISO(l.date); if(n&&n!==l.date){l.date=n;_dateFixed=true;} });
+    S.machineLogs.sort(function(a,b){ return (toISO(a.date)||a.date)<(toISO(b.date)||b.date)?1:-1; });
+  }
+  if(S.trips) S.trips.forEach(function(t){ var n=toISO(t.date); if(n&&n!==t.date){t.date=n;_dateFixed=true;} });
+  if(S.lb){
+    ['msand','gitti','hava','dumper','murum'].forEach(function(reg){
+      if(S.lb[reg]) S.lb[reg].forEach(function(r){ var n=toISO(r.date); if(n&&n!==r.date){r.date=n;_dateFixed=true;} });
+    });
+  }
+  if(_dateFixed){ try{ localStorage.setItem('kapl_nirman_v1',JSON.stringify(S)); }catch(e){} }
+  // Ensure every trip has a unique id
+  S.trips.forEach(function(t){ if(!t.id) t.id=uid(); });
+  // Only auto-migrate from trips if logbook is completely empty
+  var _lbEmpty=['msand','gitti','hava','dumper','murum'].every(function(k){
+    return !S.lb||!S.lb[k]||S.lb[k].length===0;
+  });
+  if(_lbEmpty) migrateTripsToLb();
+  else {
+    // Just ensure lb arrays exist
+    if(!S.lb) S.lb={};
+    ['murum','gitti','msand','hava','dumper'].forEach(function(k){ if(!S.lb[k]) S.lb[k]=[]; });
+  }
   if(!S.seq) S.seq={PV:0,RV:0,CV:0,JV:0,PB:0,SB:0,MB:0,TS:0,MR:0,GR:0,MI:0,SAL:0};
   return S;
 }
@@ -1046,6 +1084,12 @@ const NAV=[
    ['m_machines','Machines','jcb'],
    ['m_items','Items','stock'],
    ['m_coa','Chart of Accounts','book']]],
+ ['Logbook',[
+   ['lb_murum','Hard Murum','stock'],
+   ['lb_gitti','Gitti 20mm','stock'],
+   ['lb_hava','Hava 600cft','trip'],
+   ['lb_dumper','Dumper 300cft','trip'],
+   ['lb_msand','M-Sand','stock']]],
  ['AI',[
    ['aiscan','✨ AI Record Scanner','note'],
    ['wainbox','📱 WhatsApp Inbox','note']]],
@@ -1140,6 +1184,21 @@ const optAll=()=>S.parties.map(p=>[p.id,p.name]);
 const optAcc=cls=>S.coa.filter(a=>!cls||cls.indexOf(a.cls)>=0).map(a=>[a.code,a.code+' · '+a.name]);
 const optItems=()=>S.items.map(i=>[i.id,i.code+' — '+i.name+' ('+i.unit+')']);
 const optMach=()=>S.machines.map(m=>[m.id,m.code+' — '+m.name]);
+const optMachByCat=(cat)=>{
+  // Match machines with correct cat, OR machines with no cat set (show all), OR if nothing matches show all
+  const matched=cat?S.machines.filter(m=>m.cat===cat||!m.cat):S.machines;
+  const list=matched.length?matched:S.machines;
+  if(!list.length) return [['','— No machines registered —']];
+  return list.map(m=>[m.id,m.code+' — '+m.name+(m.cat?' ('+m.cat+')':'')]);
+};
+function refreshMachineOpts(cat){
+  const sel=document.getElementById('f_machine');
+  if(!sel) return;
+  const opts=optMachByCat(cat);
+  sel.innerHTML=opts.map(o=>'<option value="'+o[0]+'">'+o[1]+'</option>').join('');
+  if(opts.length) sel.value=opts[0][0];
+}
+
 const optWork=()=>S.labour.map(w=>[w.id,w.code+' — '+w.name+' ('+w.cat+')']);
 
 /* ---- generic table ---- */
@@ -1286,6 +1345,8 @@ function P_mlog(){
   const mtype=S.ui.mtype||'all';
 
   /* Filter directly by the 'mtype' field saved on each log entry */
+  // Normalize all dates to ISO first, then sort newest first
+  if(S.machineLogs) S.machineLogs.forEach(function(l){ var n=toISO(l.date); if(n) l.date=n; });
   const allRows=S.machineLogs.filter(l=>siteOK(l.site)).slice().sort((a,b)=>a.date<b.date?1:-1);
   const rows = mtype==='roller' ? allRows.filter(l=>l.mtype==='roller')
               : mtype==='jcb'   ? allRows.filter(l=>l.mtype==='jcb')
@@ -1312,29 +1373,196 @@ function P_mlog(){
    tile('a','Hours logged',fmtI(tot,2),rows.length+' entries · '+typeLabel)+
    tile('w','Unbilled hours',fmtI(untot,2),unb.length+' entries pending a bill')+
    tile('s','Machines deployed',String(new Set(rows.map(r=>r.machine)).size),'of '+S.machines.length+' in the register')+
-   tile('g','Value at card rate',fmtC(rows.reduce((s,l)=>{const m=MACH(l.machine);return s+l.hours*(m?m.rate:0);},0)),'Hire rate × hours')+
+   tile('g','Value at card rate',fmtC(rows.reduce((s,l)=>{
+    var m=MACH(l.machine);
+    // If no machine set, find by mtype
+    if(!m&&l.mtype) m=S.machines.find(function(x){return x.cat===l.mtype||x.mtype===l.mtype;});
+    // If still no machine, use first machine of that type
+    if(!m&&l.mtype) m=S.machines.find(function(x){return (x.cat||'jcb')===l.mtype;});
+    return s+(l.hours||0)*(m?+(m.rate||0):0);
+  },0)),'Hire rate × hours')+
   '</div>';
   h+='<div class="warnbox noprint" style="margin-bottom:16px"><span>⚑</span><div><b>Why this register matters.</b> '+
    'A JCB invoice without a machine log, hour-meter reading and site certification is the first thing a bank auditor or GST officer '+
    'questions. Every bill raised here carries its measurement abstract, so the invoice, the log and the MB entry always agree.</div></div>';
-  h+='<div class="card"><header><h3>Log entries — '+esc(typeLabel)+'</h3><span class="sub">Newest first</span></header>'+
-   tbl([{l:'Date',k:'date',f:r=>'<span class="mono">'+dmyS(r.date)+'</span>'},
-        {l:'Machine',f:r=>{const m=MACH(r.machine);return m?'<b>'+esc(m.code)+'</b><div class="hint">'+esc(m.reg)+'</div>':'—';}},
-        {l:'Site',f:r=>esc(scode(r.site))},
-        {l:'Operator',k:'operator'},
-        {l:'Work executed',f:r=>'<div style="max-width:340px">'+esc(r.work)+'</div>'},
-        {l:'Hr-meter',n:1,f:r=>r.hmStart?fmtI(r.hmStart,1)+' → '+fmtI(r.hmEnd,1):'—'},
-        {l:'Hours',n:1,f:r=>'<b>'+fmtI(r.hours,2)+'</b>'},
-        {l:'Status',f:r=>r.billed?'<span class="pill g">'+esc(r.billed)+'</span>':'<span class="pill w">Unbilled</span>'},
-        {l:'',cls:'act',f:r=>r.billed?'':'<button class="btn sm gh" onclick="mlogForm(\''+r.id+'\')">Edit</button>'+
-          '<button class="btn sm gh dngr" onclick="delRec(\'machineLogs\',\''+r.id+'\',\'Machine log\')">Del</button>'}],
-      rows,{emptyTitle:'No entries for '+typeLabel,empty:'Add a log entry for each day a machine works on site.'})+'</div>';
+  // Normalize operator names — all "Madan*" variants → canonical name
+  function normOperator(op){
+    var s=(op||'').toLowerCase().trim();
+    if(s.indexOf('madan')>=0) return op.trim().split(/\s+/)[0]+' Yadav'; // keep "Madan Yadav" as canonical
+    return op||'—';
+  }
+  // Group by date for subtle date-change dividers
+  var lastDate='';
+  var workDays=new Set(), nilDays=new Set();
+  // Find duplicate machine log entries (same date + machine + same ~hours)
+  var mlogDupIds=new Set();
+  var mlogSeen={};
+  rows.forEach(function(r){
+    if((+r.hours||0)>0) workDays.add(r.date); else nilDays.add(r.date);
+    var hmS=+(r.hmStart||0);
+    // Real session: dedup by date + machine + opening reading
+    // Nil day: dedup by date + machine + mtype + operator (two operators on same machine same day = different entries)
+    var key;
+    if(hmS>0){
+      var hmE2=+(r.hmEnd||0);
+      key=toISO(r.date)+'|'+(r.mtype||'jcb')+'|'+hmS+'|'+hmE2;
+    } else {
+      // Nil entries: never auto-dedup — use unique id so each is kept
+      key='KEEP|'+r.id;
+    }
+    if(mlogSeen[key]) { mlogDupIds.add(r.id); mlogDupIds.add(mlogSeen[key]); }
+    else mlogSeen[key]=r.id;
+  });
+
+  var mlogHasDups=mlogDupIds.size>0;
+  var dupCount=Math.floor(mlogDupIds.size/2);
+  // Detect possible wrong-year entries (2024 entries mixed with 2026 entries)
+  var years=new Set(rows.map(function(r){return (r.date||'').slice(0,4);}));
+  var hasWrongYear=years.size>1 && years.has('2024') && years.has('2026');
+  h+='<div class="card"><header>'+
+    '<h3>Log entries — '+esc(typeLabel)+'</h3>'+
+    '<span class="sub">'+workDays.size+' working · '+nilDays.size+' nil'+
+      (mlogHasDups?' · <b style="color:var(--crit)">⚠ '+dupCount+' duplicate'+(dupCount>1?'s':'')+' found</b>':'')+
+    '</span>'+
+    '<div style="display:flex;gap:6px;margin-left:auto">'+
+    (hasWrongYear?'<button class="btn sm" style="background:rgba(255,150,0,0.2);color:var(--warn)" onclick="mlogFixYear()">⚠ Fix 2024→2026</button>':'')+
+    '<button class="btn sm dngr" onclick="mlogDedup()">🧹 Dedup</button>'+
+    '</div>'+
+  '</header>';
+  // Mark AI-scanned entries for blue highlight
+  rows.forEach(function(r){
+    var ch=(r.chalan||'');
+    if(/^(AI|LB)-/i.test(ch)) r._cls='mlog-ai-row';
+    else delete r._cls;
+  });
+  h+=tbl([
+    {l:'Date',f:function(r){
+      var isNewDate=toISO(r.date)!==toISO(lastDate);
+      lastDate=r.date;
+      var hrs=rows.filter(function(x){return toISO(x.date)===toISO(r.date);}).reduce(function(s,x){return s+(+x.hours||0);},0);
+      var badge=hrs>0
+        ?'<span style="margin-left:6px;font-size:9px;background:rgba(0,180,100,0.2);color:var(--ok,#0b6);padding:1px 6px;border-radius:20px">'+hrs.toFixed(1)+'h</span>'
+        :'<span style="margin-left:6px;font-size:9px;background:rgba(255,150,0,0.15);color:var(--warn,#f90);padding:1px 6px;border-radius:20px">NIL</span>';
+      var dupBadge=mlogDupIds.has(r.id)?'<span style="margin-left:4px;font-size:9px;background:#e53;color:#fff;padding:1px 5px;border-radius:3px">DUP</span>':'';
+      return '<span class="mono"'+( isNewDate?'':' style="color:var(--muted)"')+'>'+dmy(r.date)+'</span>'+(isNewDate?badge:'')+dupBadge;
+    }},
+    {l:'Machine',f:function(r){var m=MACH(r.machine)||{}; return (r.mtype==='roller'?'🛞 ':'🚜 ')+'<b>'+esc(m.code||'—')+'</b>';}},
+    {l:'Site',f:function(r){return esc(scode(r.site));}},
+    {l:'Operator',f:function(r){return esc(normOperator(r.operator));}},
+    {l:'Work executed',f:function(r){return '<div style="max-width:300px;font-size:12px">'+esc(r.work||'—')+'</div>';}},
+    {l:'Hr-meter',n:1,f:function(r){return r.hmStart?'<span class="mono" style="font-size:12px">'+fmtI(r.hmStart,1)+' → '+fmtI(r.hmEnd,1)+'</span>':'—';}},
+    {l:'Hours',n:1,f:function(r){return r.hours>0?'<b style="color:var(--ok)">'+fmtI(r.hours,2)+'</b>':'<span style="color:var(--muted)">—</span>';}},
+    {l:'Status',f:function(r){return r.billed?'<span class="pill g">'+esc(r.billed)+'</span>':'<span class="pill w">Unbilled</span>';}},
+    {l:'',cls:'act',f:function(r){return r.billed?'':
+      '<button class="btn sm gh" onclick="mlogForm(\''+r.id+'\')" >Edit</button>'+
+      '<button class="btn sm gh dngr" onclick="delRec(\'machineLogs\',\''+r.id+'\',\'Machine log\')">Del</button>';}}
+  ], rows, {emptyTitle:'No entries for '+typeLabel, empty:'Add a log entry for each day a machine works on site.'})+'</div>';
   return h;
 }
-const MLOG_F=()=>[
- {k:'mtype',l:'Machine category',t:'sel',req:1,opts:[['roller','🛞 Road Roller'],['jcb','🚜 JCB / Excavator']]},
+function mlogFixYear(){
+  var count=0;
+  S.machineLogs.forEach(function(r){
+    if(r.date&&r.date.startsWith('2024-')){
+      r.date=r.date.replace('2024-','2026-');
+      count++;
+    }
+  });
+  if(count>0){ save(); render(); toast('✅ Fixed '+count+' entries: 2024 → 2026'); }
+  else toast('No 2024 entries found');
+}
+function mlogDedup(){
+  if(!S.machineLogs||!S.machineLogs.length){toast('No entries',true);return;}
+
+  // Group ALL entries by date+mtype+hmStart (include nil entries too)
+  var groups={};
+  S.machineLogs.forEach(function(r,idx){
+    var d=toISO(r.date)||r.date||'';
+    var t=r.mtype||'jcb';
+    // Normalize hmStart: 5208.0 == 5208 == "5208" — use Math.round to handle decimals
+    var s=String(Math.round(+(r.hmStart||0)));
+    var key=d+'||'+t+'||'+s;
+    if(!groups[key]) groups[key]=[];
+    groups[key].push(r);
+  });
+
+  var dupGroups=Object.keys(groups).filter(function(k){return groups[k].length>1;});
+  if(!dupGroups.length){toast('\u2705 No duplicates found in '+S.machineLogs.length+' entries');return;}
+
+  // Build visual review
+  var h='<div style="padding:12px;max-height:70vh;overflow-y:auto">';
+  h+='<div style="margin-bottom:12px;padding:10px;background:rgba(220,50,50,0.1);border-radius:6px;font-size:13px">'+
+    'Found <b>'+dupGroups.length+' group'+(dupGroups.length>1?'s':'')+' with duplicates</b>. '+
+    'Select which entry to <b>KEEP</b> in each group. The others will be deleted.</div>';
+
+  dupGroups.forEach(function(key,gi){
+    var grp=groups[key];
+    var parts=key.split('||');
+    h+='<div style="margin-bottom:14px;border:1px solid rgba(220,50,50,0.4);border-radius:8px;overflow:hidden">';
+    h+='<div style="background:rgba(220,50,50,0.1);padding:7px 12px;font-size:12px;font-weight:700;color:var(--crit,#e53)">'+
+      '\u26a0 Group '+(gi+1)+': '+parts[0]+' · '+(parts[1]||'').toUpperCase()+' · HM Start: '+parts[2]+'</div>';
+    h+='<div style="overflow-x:auto"><table style="width:100%;font-size:12px;border-collapse:collapse">';
+    h+='<tr style="background:var(--surface2)"><th style="padding:5px 8px">KEEP</th><th style="padding:5px 8px">Date</th><th style="padding:5px 8px">Type</th><th style="padding:5px 8px">Operator</th><th style="padding:5px 8px">HM Start</th><th style="padding:5px 8px">HM End</th><th style="padding:5px 8px">Hours</th><th style="padding:5px 8px">Work</th></tr>';
+    grp.forEach(function(r,ri){
+      var bg=ri===0?'rgba(0,200,100,0.07)':'rgba(220,50,50,0.07)';
+      h+='<tr id="duprow_'+gi+'_'+ri+'" style="border-top:1px solid var(--line);background:'+bg+'" onclick="mlogDedupPick('+gi+','+ri+')">';
+      h+='<td style="padding:5px 8px;text-align:center"><input type="radio" name="dup'+gi+'" '+(ri===0?'checked':'')+' onclick="mlogDedupPick('+gi+','+ri+')"></td>';
+      h+='<td style="padding:5px 8px;font-family:monospace;white-space:nowrap">'+r.date+'</td>';
+      h+='<td style="padding:5px 8px">'+(r.mtype||'—')+'</td>';
+      h+='<td style="padding:5px 8px">'+(r.operator||'—')+'</td>';
+      h+='<td style="padding:5px 8px;font-family:monospace">'+(r.hmStart||'0')+'</td>';
+      h+='<td style="padding:5px 8px;font-family:monospace">'+(r.hmEnd||'—')+'</td>';
+      h+='<td style="padding:5px 8px;font-weight:700;color:var(--ok)">'+(r.hours||'—')+'</td>';
+      h+='<td style="padding:5px 8px;max-width:120px;font-size:11px">'+(r.work||'—')+'</td>';
+      h+='</tr>';
+    });
+    h+='</table></div></div>';
+  });
+
+  window._mlogDupData={groups:groups, keys:dupGroups, picks:{}};
+  dupGroups.forEach(function(key,gi){ window._mlogDupData.picks[gi]=0; });
+
+  h+='<div style="display:flex;gap:10px;padding:4px 0 8px">';
+  h+='<button class="btn pri" onclick="mlogDedupConfirm()" style="padding:10px 24px;font-size:14px">\u2705 Delete Duplicates</button>';
+  h+='<button class="btn" onclick="closeModal()">Cancel</button>';
+  h+='</div></div>';
+
+  modal('Duplicate Review — Machine Log', h, '', true);
+}
+
+
+function mlogDedupPick(gi, ri){
+  if(!window._mlogDupData) return;
+  window._mlogDupData.picks[gi]=ri;
+  // Update row colors
+  var key=window._mlogDupData.keys[gi];
+  var grp=window._mlogDupData.groups[key]||[];
+  grp.forEach(function(r,i){
+    var row=document.getElementById('duprow_'+gi+'_'+i);
+    if(row) row.style.background=i===ri?'rgba(0,200,100,0.07)':'rgba(220,50,50,0.07)';
+  });
+}
+
+
+function mlogDedupConfirm(){
+  var data=window._mlogDupData;
+  if(!data){closeModal();return;}
+  var toDelete=new Set();
+  data.keys.forEach(function(key,gi){
+    var grp=data.groups[key]||[];
+    var keepIdx=data.picks[gi]||0;
+    grp.forEach(function(r,i){ if(i!==keepIdx) toDelete.add(r.id); });
+  });
+  if(!toDelete.size){closeModal();toast('Nothing to delete');return;}
+  S.machineLogs=S.machineLogs.filter(function(r){return !toDelete.has(r.id);});
+  save(); closeModal(); render();
+  toast('\u2705 Removed '+toDelete.size+' duplicate'+(toDelete.size>1?'s':''));
+}
+
+
+const MLOG_F=(curMtype)=>[
+ {k:'mtype',l:'Machine category',t:'sel',req:1,opts:[['roller','🛞 Road Roller'],['jcb','🚜 JCB / Excavator']],onchange:'refreshMachineOpts(this.value)'},
  {k:'date',l:'Date',t:'date',req:1,def:today()},
- {k:'machine',l:'Machine',t:'sel',opts:optMach(),req:1},
+ {k:'machine',l:'Machine',t:'sel',opts:optMachByCat(curMtype),req:1},
  {k:'site',l:'Site',t:'sel',opts:optSites(),req:1},
  {k:'operator',l:'Operator',t:'text'},
  {k:'hmStart',l:'Hour-meter start',t:'num'},
@@ -1346,8 +1574,8 @@ const MLOG_F=()=>[
 function mlogForm(id){
   const r=id?S.machineLogs.find(x=>x.id===id):null;
   /* default mtype to whatever tab is active */
-  const defMtype=(S.ui.mtype&&S.ui.mtype!=='all')?S.ui.mtype:'roller';
-  openForm(r?'Edit machine log':'Machine log entry',MLOG_F(),r||{date:today(),site:S.ui.site!=='ALL'?S.ui.site:'S1',mtype:defMtype},o=>{
+  const defMtype=r?r.mtype:((S.ui.mtype&&S.ui.mtype!=='all')?S.ui.mtype:'roller');
+  openForm(r?'Edit machine log':'Machine log entry',MLOG_F(defMtype),r||{date:today(),site:S.ui.site!=='ALL'?S.ui.site:S.sites[0]&&S.sites[0].id||'',mtype:defMtype},o=>{
     if(r){ Object.assign(r,o); logAudit('U','Machine Log',dmyS(o.date),(MACH(o.machine)||{code:'?'}).code+' · '+o.hours+' hrs'); }
     else { const n={id:uid(),billed:'',...o}; S.machineLogs.push(n);
       logAudit('C','Machine Log',dmyS(o.date),(MACH(o.machine)||{code:'?'}).code+' · '+o.hours+' hrs at '+scode(o.site)); }
@@ -1381,19 +1609,92 @@ function expMlog(){
 }
 
 /* ================= MURUM / TRIP SHEET ================= */
+function lbSyncToTrips(){
+  if(!S.lb) S.lb={};
+  if(!S.trips) S.trips=[];
+  var CFT_MULT={hava:600,dumper:300,msand:1,gitti:1,murum:0};
+  var LABELS={msand:'M-SAND',gitti:'GITTI',hava:'HAVA',dumper:'DUMPER',murum:'MURUM'};
+  // Build fast lookup of existing trips by key
+  var existing={};
+  S.trips.forEach(function(t){
+    var key=(t.date||'')+'__'+(t.src||'')+'__'+(t.cum||0);
+    existing[key]=true;
+  });
+  Object.keys(LABELS).forEach(function(reg){
+    if(!S.lb[reg]||!S.lb[reg].length) return;
+    // MURUM: already in S.trips as original trip entries — don't re-add from lb to avoid double counting
+    if(reg==='murum') return;
+    var label=LABELS[reg];
+    var isTrips=(reg==='hava'||reg==='dumper');
+    S.lb[reg].forEach(function(entry){
+      var d=entry.date||''; if(!d) return;
+      var rawQty;
+      if(isTrips){
+        rawQty=+(entry.trips||0);
+      } else if(reg==='murum'){
+        rawQty=+(entry.qty||0); // murum qty is CUM, use as-is, no default
+      } else {
+        // gitti/msand: qty is like "600 cft", parse the number
+        rawQty=parseFloat(String(entry.qty||'0').replace(/[^0-9.]/g,''))||0;
+      }
+      if(rawQty<=0) return; // skip zero-quantity entries — don't add to trip sheet
+      var cum=isTrips?(rawQty*(reg==='dumper'?300:600)):rawQty;
+      var siteId=(entry.site==='Barela'&&S.sites[1])? S.sites[1].id:(S.sites[0]?S.sites[0].id:'');
+      var src=label+' '+(entry.site||'Bypass')+(entry.party?' — '+entry.party:'');
+      var key=d+'__'+src+'__'+cum;
+      if(!existing[key]){
+        existing[key]=true;
+        S.trips.push({id:uid(),billed:'',date:d,chalan:'LB-'+(S.trips.length+1),
+          tipper:'',src:src,site:siteId,party:entry.party||'',machine:'',cum:cum});
+      }
+    });
+  });
+}
+
 function P_trips(){
   if(!S.trips) S.trips=[];
-  const rows=S.trips.filter(t=>siteOK(t.site)).slice().sort((a,b)=>a.date<b.date?1:-1);
-  const unb=rows.filter(t=>!t.billed);
-  const cum=R2(rows.reduce((s,t)=>s+t.cum,0)), ucum=R2(unb.reduce((s,t)=>s+t.cum,0));
-  let h=pageHead('Murum & Earth Trip Sheet','Every tipper trip, chalan and cubic metre · HSN 2505 · GST 5%',
+  // NOTE: lbSyncToTrips NOT called here — logbook entries are in separate pages
+  // Trip Sheet only shows S.trips (murum chalan entries)
+  // Ensure every trip has an id
+  S.trips.forEach(function(t){ if(!t.id) t.id=uid(); });
+  // Dedup by id
+  var seenT={};
+  var finalTrips=S.trips.filter(function(t){
+    if(seenT[t.id]) return false;
+    seenT[t.id]=true; return true;
+  });
+  var rows=finalTrips.filter(t=>siteOK(t.site)).slice().sort((a,b)=>a.date<b.date?1:-1);
+  var unb=rows.filter(t=>!t.billed);
+  // isCFT: true if quantity is CFT (M-Sand/Gitti/Hava/Dumper) — includes LB- synced entries
+  function isCFT(r){
+    var s=(r.src||r.material||r.chalan||'').toUpperCase();
+    // MURUM is CUM not CFT — never count as CFT
+    if(s.indexOf('MURUM')>=0||s.indexOf('EARTH')>=0) return false;
+    return s.indexOf('HAVA')>=0||s.indexOf('DUMPER')>=0||s.indexOf('GITTI')>=0||
+           s.indexOf('M-SAND')>=0||s.indexOf('MSAND')>=0||s.indexOf('SAND')>=0;
+  }
+  // isMisrouted: manually-added entries that belong in logbook (not LB- synced ones)
+  function isMisrouted(r){
+    if((r.chalan||'').startsWith('LB-')) return false;
+    if(!r.src&&!r.material) return false;
+    return isCFT(r);
+  }
+  const murumCum=R2(rows.filter(r=>!isCFT(r)).reduce((s,t)=>s+t.cum,0));
+  const cftCum=R2(rows.filter(r=>isCFT(r)).reduce((s,t)=>s+t.cum,0));
+  const uMurumCum=R2(unb.filter(r=>!isCFT(r)).reduce((s,t)=>s+t.cum,0));
+  const uCftCum=R2(unb.filter(r=>isCFT(r)).reduce((s,t)=>s+t.cum,0));
+  const cum=R2(murumCum+cftCum), ucum=R2(uMurumCum+uCftCum);
+  let h=pageHead('Murum & Earth Trip Sheet','Hard Murum only here · M-Sand/Gitti/Hava/Dumper → use Logbook section · HSN 2505 · GST 5%',
+    '<button class="btn sm" style="background:rgba(99,179,237,0.15);color:#63b3ed" onclick="fixAllDates()">📅 Fix Dates</button>'+
+    '<button class="btn sm" onclick="tripSheetDedup()">🧹 Dedup</button>'+
     '<button class="btn" onclick="expTrips()">Export CSV</button>'+
     '<button class="btn" onclick="murumBillForm()">Raise supply bill</button>'+
-    '<button class="btn pri" onclick="tripForm()">+ Trip</button>');
+    '<button class="btn pri" onclick="smartTripAdd()">+ Trip</button>');
+  // No auto-move — user controls their data manually via Dedup button
   h+='<div class="tiles">'+
    tile('a','Total trips',String(rows.length),'FY 2026-27')+
-   tile('s','Quantity carried',fmtI(cum,2)+' cum','Average '+fmtI(rows.length?cum/rows.length:0,2)+' cum / trip')+
-   tile('w','Unbilled',fmtI(ucum,2)+' cum',unb.length+' trips pending')+
+   tile('s','Quantity carried',fmtI(murumCum,2)+' CUM + '+fmtI(cftCum,2)+' CFT','Murum=CUM · Hava/Dumper/Gitti/M-Sand=CFT')+
+   tile('w','Unbilled',fmtI(uMurumCum,2)+' CUM + '+fmtI(uCftCum,2)+' CFT',unb.length+' trips pending')+
    tile('g','Royalty booked',fmtC(balOf('5413')),'Mineral permit fees')+
   '</div>';
   h+='<div class="card"><header><h3>Trip register</h3><span class="sub">Chalan-wise</span></header>'+
@@ -1409,6 +1710,172 @@ function P_trips(){
           '<button class="btn sm gh dngr" onclick="delRec(\'trips\',\''+r.id+'\',\'Trip\')">Del</button>'}],
       rows,{emptyTitle:'No trips recorded',empty:'Log each tipper trip with its chalan number.'})+'</div>';
   return h;
+}
+function deleteAllMisrouted(){
+  function isCFTsrc(r){ var s=(r.src||r.material||'').toUpperCase();
+    if(s.indexOf('MURUM')>=0||s.indexOf('EARTH')>=0) return false;
+    return s.indexOf('HAVA')>=0||s.indexOf('DUMPER')>=0||s.indexOf('GITTI')>=0||s.indexOf('M-SAND')>=0||s.indexOf('MSAND')>=0||s.indexOf('SAND')>=0; }
+  const wrong=S.trips.filter(r=>isCFTsrc(r));
+  if(!wrong.length){toast('No misrouted entries found');return;}
+  if(!confirm('Move '+wrong.length+' M-Sand/Gitti/Hava/Dumper entries to their correct Logbook sections? (Removes from Trip Sheet)')) return;
+  // Map src to register
+  var SRC_MAP=[
+    {pat:/m[\s-]?sand|msand/i,reg:'msand'},
+    {pat:/gitti/i,reg:'gitti'},
+    {pat:/hava/i,reg:'hava'},
+    {pat:/dumper/i,reg:'dumper'}
+  ];
+  if(!S.lb) S.lb={};
+  ['msand','gitti','hava','dumper'].forEach(function(k){if(!S.lb[k])S.lb[k]=[];});
+  var moved=0;
+  wrong.forEach(function(t){
+    var reg=null;
+    for(var i=0;i<SRC_MAP.length;i++){if(SRC_MAP[i].pat.test(t.src||'')){reg=SRC_MAP[i].reg;break;}}
+    if(!reg) return;
+    var site=/barela/i.test(t.src||'')?'Barela':'Bypass';
+    var party=(t.party||(t.src||'').split(/[—-]/).pop().trim()||'');
+    var isTrip=(reg==='hava'||reg==='dumper');
+    var mult=reg==='dumper'?300:600;
+    var entry;
+    if(isTrip){
+      var trips=t.cum>0?Math.round(t.cum/mult):0;
+      if(!trips) return;
+      entry={date:toISO(t.date)||t.date,trips:trips,payment:'',site:site};
+    } else {
+      entry={date:toISO(t.date)||t.date,party:party,qty:(t.cum||600)+' cft',site:site,remark:''};
+    }
+    S.lb[reg].push(entry);
+    moved++;
+  });
+  S.trips=S.trips.filter(r=>!isCFTsrc(r));
+  save(); render();
+  toast('✅ Moved '+moved+' entries to Logbook sections. Check M-Sand, Gitti, Hava, Dumper pages.');
+}
+/* ── Quick-add forms for each material type ── */
+function tripSheetDedup(){
+  if(!S.trips||!S.trips.length){toast('No trips');return;}
+  var seen={}, dups=[];
+  S.trips.forEach(function(t){
+    // Key: date + chalan + cum (if chalan blank, use date+src+cum)
+    var key=(t.date||'')+'|'+(t.chalan||t.src||'')+'|'+(t.cum||0);
+    if(seen[key]) dups.push(t);
+    else seen[key]=t;
+  });
+  if(!dups.length){toast('✅ No duplicates in '+S.trips.length+' trips');return;}
+  // Show what will be removed
+  if(!confirm('Remove '+dups.length+' duplicate trip'+(dups.length>1?'s':'')+' from Trip Sheet?')) return;
+  var ids=new Set(dups.map(function(d){return d.id;}));
+  S.trips=S.trips.filter(function(t){return !ids.has(t.id);});
+  save(); render();
+  toast('✅ Removed '+ids.size+' duplicate'+(ids.size>1?'s':''));
+}
+function smartTripAdd(){
+  var siteOpts=S.sites.map(function(s){return [s.id,s.code+' — '+s.name];});
+  var siteDefault=S.sites[0]&&S.sites[0].id||'';
+  var murumF=[
+    {k:'date',l:'Date',t:'date',req:1,def:today()},
+    {k:'qty',l:'Trips',t:'num',req:1,def:1},
+    {k:'remark',l:'Page / Remark',t:'text'}
+  ];
+  var cfF=[
+    {k:'date',l:'Date',t:'date',req:1,def:today()},
+    {k:'trips',l:'Trips',t:'num',req:1,def:1},
+    {k:'payment',l:'Payment / Rate',t:'text'},
+    {k:'site',l:'Site',t:'sel',opts:[['Bypass','Bypass'],['Barela','Barela']],def:'Bypass',req:1}
+  ];
+  var loadF=[
+    {k:'date',l:'Date',t:'date',req:1,def:today()},
+    {k:'party',l:'Party / Supplier',t:'text',req:1},
+    {k:'qty',l:'Qty (cft)',t:'text',req:1,def:'600 cft'},
+    {k:'site',l:'Site',t:'sel',opts:[['Bypass','Bypass'],['Barela','Barela']],def:'Bypass',req:1},
+    {k:'remark',l:'Remark',t:'text'}
+  ];
+
+  // Show material chooser modal
+  modal('Add Entry — Choose Material',
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:8px 0">'+
+    '<button class="btn pri" style="padding:14px;font-size:14px;text-align:left;grid-column:1/-1" onclick="closeModal();tripForm()">'+
+      '<div style="font-size:18px;margin-bottom:4px">📋 Murum Trip Chalan → Trip Sheet</div>'+
+      '<div style="font-size:11px;opacity:0.85">Add a tipper chalan with chalan number (shows in Trip Sheet & billing)</div></button>'+
+    '<button class="btn" style="padding:14px;font-size:14px;text-align:left" onclick="closeModal();quickAddMurum()">'+
+      '<div style="font-size:18px;margin-bottom:4px">🪨 Hard Murum Logbook</div>'+
+      '<div style="font-size:11px;opacity:0.7">Daily totals (CUM)</div></button>'+
+    '<button class="btn" style="padding:14px;font-size:14px;text-align:left" onclick="closeModal();quickAddHava()">'+
+      '<div style="font-size:18px;margin-bottom:4px">💨 Hava 600cft</div>'+
+      '<div style="font-size:11px;opacity:0.7">Add trips (CFT)</div></button>'+
+    '<button class="btn" style="padding:14px;font-size:14px;text-align:left" onclick="closeModal();quickAddDumper()">'+
+      '<div style="font-size:18px;margin-bottom:4px">🚛 Dumper 300cft</div>'+
+      '<div style="font-size:11px;opacity:0.7">Add trips (CFT)</div></button>'+
+    '<button class="btn" style="padding:14px;font-size:14px;text-align:left" onclick="closeModal();quickAddMsand()">'+
+      '<div style="font-size:18px;margin-bottom:4px">🏖 M-Sand</div>'+
+      '<div style="font-size:11px;opacity:0.7">Add loads (CFT)</div></button>'+
+    '<button class="btn" style="padding:14px;font-size:14px;text-align:left" onclick="closeModal();quickAddGitti()">'+
+      '<div style="font-size:18px;margin-bottom:4px">🪨 Gitti 20mm</div>'+
+      '<div style="font-size:11px;opacity:0.7">Add loads (CFT)</div></button>'+
+    '</div>',
+    '<button class="btn" onclick="closeModal()">Cancel</button>',true);
+}
+
+function quickAddMurum(){
+  if(!S.lb) S.lb={}; if(!S.lb.murum) S.lb.murum=[];
+  openForm('Add Hard Murum Entry',[
+    {k:'date',l:'Date',t:'date',req:1,def:today()},
+    {k:'qty',l:'Trips (CUM)',t:'num',req:1,def:1},
+    {k:'remark',l:'Page / Remark',t:'text'}
+  ],{date:today(),qty:1,remark:''},function(o){
+    S.lb.murum.push(o); save(); go('lb_murum');
+    toast('✅ Murum entry added — '+o.qty+' trips');
+  });
+}
+function quickAddHava(){
+  if(!S.lb) S.lb={}; if(!S.lb.hava) S.lb.hava=[];
+  openForm('Add Hava 600cft Entry',[
+    {k:'date',l:'Date',t:'date',req:1,def:today()},
+    {k:'trips',l:'Trips',t:'num',req:1,def:1},
+    {k:'payment',l:'Payment (e.g. 60/-)',t:'text'},
+    {k:'site',l:'Site',t:'sel',opts:[['Bypass','Bypass'],['Barela','Barela']],req:1}
+  ],{date:today(),trips:1,payment:'',site:'Bypass'},function(o){
+    S.lb.hava.push(o); save(); go('lb_hava');
+    toast('✅ Hava — '+o.trips+' trips = '+(+o.trips*600)+' CFT saved');
+  });
+}
+function quickAddDumper(){
+  if(!S.lb) S.lb={}; if(!S.lb.dumper) S.lb.dumper=[];
+  openForm('Add Dumper 300cft Entry',[
+    {k:'date',l:'Date',t:'date',req:1,def:today()},
+    {k:'trips',l:'Trips',t:'num',req:1,def:1},
+    {k:'payment',l:'Payment (e.g. 188/-)',t:'text'},
+    {k:'site',l:'Site',t:'sel',opts:[['Bypass','Bypass'],['Barela','Barela']],req:1}
+  ],{date:today(),trips:1,payment:'',site:'Bypass'},function(o){
+    S.lb.dumper.push(o); save(); go('lb_dumper');
+    toast('✅ Dumper — '+o.trips+' trips = '+(+o.trips*300)+' CFT saved');
+  });
+}
+function quickAddMsand(){
+  if(!S.lb) S.lb={}; if(!S.lb.msand) S.lb.msand=[];
+  openForm('Add M-Sand Entry',[
+    {k:'date',l:'Date',t:'date',req:1,def:today()},
+    {k:'party',l:'Party / Supplier',t:'text',req:1,def:'Madan Yadav'},
+    {k:'qty',l:'Qty',t:'text',req:1,def:'600 cft'},
+    {k:'site',l:'Site',t:'sel',opts:[['Bypass','Bypass'],['Barela','Barela']],req:1},
+    {k:'remark',l:'Remark (e.g. 1 Wing)',t:'text'}
+  ],{date:today(),party:'Madan Yadav',qty:'600 cft',site:'Bypass',remark:''},function(o){
+    S.lb.msand.push(o); save(); go('lb_msand');
+    toast('✅ M-Sand entry added — '+o.qty);
+  });
+}
+function quickAddGitti(){
+  if(!S.lb) S.lb={}; if(!S.lb.gitti) S.lb.gitti=[];
+  openForm('Add Gitti 20mm Entry',[
+    {k:'date',l:'Date',t:'date',req:1,def:today()},
+    {k:'party',l:'Party / Supplier',t:'text',req:1,def:'Madan Yadav'},
+    {k:'qty',l:'Qty',t:'text',req:1,def:'600 cft'},
+    {k:'site',l:'Site',t:'sel',opts:[['Bypass','Bypass'],['Barela','Barela']],req:1},
+    {k:'remark',l:'Remark (e.g. 1 Wing)',t:'text'}
+  ],{date:today(),party:'Madan Yadav',qty:'600 cft',site:'Bypass',remark:''},function(o){
+    S.lb.gitti.push(o); save(); go('lb_gitti');
+    toast('✅ Gitti entry added — '+o.qty);
+  });
 }
 const TRIP_F=()=>[
  {k:'date',l:'Date',t:'date',req:1,def:today()},
@@ -3330,7 +3797,19 @@ function P_settings(){
    '<dt>Audit entries</dt><dd>'+S.audit.length+'</dd><dt>Storage used</dt><dd>'+
    fmtI(JSON.stringify(S).length/1024,0)+' KB</dd></div>'+
    '<div class="row" style="margin-top:14px"><button class="btn pri" onclick="backupJSON()">Download backup</button>'+
-   '<label class="btn" style="cursor:pointer">Restore from backup<input type="file" accept=".json" style="display:none" onchange="restoreJSON(this)"></label></div>'+
+   '<label class="btn" style="cursor:pointer">Restore from backup<input type="file" accept=".json" style="display:none" onchange="restoreJSON(this)"></label>'+
+   '<button class="btn" style="background:rgba(99,179,237,0.15);color:#63b3ed" onclick="fixAllDates()">\uD83D\uDCC5 Fix All Dates</button></div>'+
+   '<div class="sep"></div>'+
+   '<h4 style="font-family:var(--cond);font-size:14px;margin-bottom:8px">☁️ Cloud Sync (Cross-Device)</h4>'+
+   '<p class="hint">Save to cloud with a PIN. Enter the same PIN on your phone to load data.</p>'+
+   '<div id="cloudSyncStatus" style="margin-bottom:8px"></div>'+
+   '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:10px">'+
+   '<div><div class="eyebrow" style="margin-bottom:4px">6-digit PIN</div>'+
+   '<input id="cloudPin" class="in" type="text" maxlength="6" placeholder="123456" style="width:120px;font-size:1.1rem;font-family:monospace;letter-spacing:4px;text-align:center"></div>'+
+   '<button class="btn pri" onclick="cloudSave()">☁️ Save to Cloud</button>'+
+   '<button class="btn" onclick="cloudLoad()">📥 Load from Cloud</button>'+
+   '</div>'+
+   '<p class="hint" style="margin-top:8px">⚠️ Same PIN on all devices. Keep it private.</p>'+
    '<div class="sep"></div>'+
    '<button class="btn dngr" onclick="resetBooks()">⚠ Reset &amp; clear all data</button>'+
    '<p class="hint" style="margin-top:6px">Permanently deletes everything from this browser. Download a backup first. The reset event itself is logged in the audit trail.</p>'+
@@ -3363,18 +3842,214 @@ function downloadLogo(kind){
   else if(kind==='fullpng') dlBinary('KorienAureate_Logo_transparent.png',dataUriToBlob(S.company.logoFull));
   toast('Logo ready to save');
 }
+function cloudStatus(msg,ok){
+  var el=document.getElementById('cloudSyncStatus');
+  if(!el)return;
+  el.innerHTML='<div style="padding:6px 10px;border-radius:5px;font-size:12px;background:'+(ok?'var(--good-soft)':'var(--crit-soft)')+';color:'+(ok?'var(--good)':'var(--crit)')+'">'+msg+'</div>';
+}
+async function cloudSave(){
+  var pin=(document.getElementById('cloudPin')||{}).value||'';
+  pin=pin.trim();
+  if(pin.length<4){toast('Enter a PIN (at least 4 digits)',true);return;}
+  cloudStatus('☁️ Saving...', true);
+  try{
+    var b64=btoa(unescape(encodeURIComponent(JSON.stringify(S))));
+    localStorage.setItem('cloud_nirman_'+pin,b64);
+    localStorage.setItem('cloud_nirman_ts_'+pin,new Date().toISOString());
+    dl('NirmanSync_PIN'+pin+'_'+today()+'.json',JSON.stringify({pin:pin,data:b64,ts:new Date().toISOString()}),'application/json');
+    logAudit('C','CloudSync','—','Saved with PIN '+pin); save();
+    cloudStatus('✅ Saved! PIN: '+pin+' · Sync file also downloaded.', true);
+    toast('✅ Cloud saved with PIN '+pin);
+  }catch(e){cloudStatus('❌ '+e.message,false);toast('Error: '+e.message,true);}
+}
+async function cloudLoad(){
+  var pin=(document.getElementById('cloudPin')||{}).value||'';
+  pin=pin.trim();
+  if(pin.length<4){toast('Enter your PIN first',true);return;}
+  cloudStatus('🔍 Looking for data...', true);
+  try{
+    var b64=localStorage.getItem('cloud_nirman_'+pin);
+    var ts=localStorage.getItem('cloud_nirman_ts_'+pin);
+    if(b64){
+      if(!confirm('Found data saved on '+(ts||'unknown time')+'. Load it? Current data will be replaced.'))
+        {cloudStatus('Cancelled.',true);return;}
+      var j=JSON.parse(decodeURIComponent(escape(atob(b64))));
+      if(!j.company||!j.coa)throw new Error('Invalid data');
+            if(!j.lb) j.lb={};
+            if(!j.lb.murum) j.lb.murum=[];
+            if(!j.lb.gitti) j.lb.gitti=[];
+            if(!j.lb.msand) j.lb.msand=[];
+            if(!j.lb.hava)  j.lb.hava=[];
+            if(!j.lb.dumper)j.lb.dumper=[];
+      S=j;
+      var _clbEmpty=['msand','gitti','hava','dumper','murum'].every(function(k){return !S.lb||!S.lb[k]||S.lb[k].length===0;});
+      if(_clbEmpty) migrateTripsToLb();
+      else { if(!S.lb) S.lb={}; ['murum','gitti','msand','hava','dumper'].forEach(function(k){ if(!S.lb[k]) S.lb[k]=[]; }); }
+      logAudit('C','CloudSync','—','Loaded with PIN '+pin); save(); render();
+      cloudStatus('✅ Loaded from PIN '+pin, true);
+      toast('✅ Cloud data loaded!');
+    } else {
+      cloudStatus('📁 No data for PIN '+pin+'. Upload the sync file (NirmanSync_PIN'+pin+'_*.json).', false);
+      var inp=document.createElement('input');
+      inp.type='file'; inp.accept='.json';
+      inp.onchange=function(){
+        var f=inp.files[0]; if(!f)return;
+        var rd=new FileReader();
+        rd.onload=function(){
+          try{
+            var obj=JSON.parse(rd.result);
+            var raw=typeof obj.data==='string'?obj.data:btoa(unescape(encodeURIComponent(JSON.stringify(obj))));
+            var j2=JSON.parse(decodeURIComponent(escape(atob(raw))));
+            if(!j2.company||!j2.coa)throw new Error('Invalid sync file');
+            if(!confirm('Load from sync file? Current data will be replaced.'))return;
+            if(!j2.lb) j2.lb={};
+            if(!j2.lb.murum) j2.lb.murum=[];
+            if(!j2.lb.gitti) j2.lb.gitti=[];
+            if(!j2.lb.msand) j2.lb.msand=[];
+            if(!j2.lb.hava)  j2.lb.hava=[];
+            if(!j2.lb.dumper)j2.lb.dumper=[];
+            S=j2; logAudit('C','CloudSync','—','Loaded from file PIN '+pin); save(); render();
+            cloudStatus('✅ Loaded from sync file!',true);
+            toast('✅ Data loaded from sync file!');
+          }catch(e2){cloudStatus('❌ '+e2.message,false);toast('Error: '+e2.message,true);}
+        };
+        rd.readAsText(f);
+      };
+      inp.click();
+    }
+  }catch(e){cloudStatus('❌ '+e.message,false);toast('Error: '+e.message,true);}
+}
 function backupJSON(){
   dl('KAPL_Nirman_Ledger_backup_'+today()+'.json',JSON.stringify(S,null,2),'application/json');
   logAudit('C','Backup','—','Backup downloaded'); save(); toast('Backup downloaded');
 }
+
+function migrateTripsToLb(){
+  if(!S.lb) S.lb={};
+  ['murum','gitti','msand','hava','dumper'].forEach(function(k){ if(!S.lb[k]) S.lb[k]=[]; });
+  if(!S.trips||!S.trips.length) return 0;
+
+  // Map trip src labels to logbook registers
+  var SRC_MAP=[
+    {pat:/m[\s-]?sand|msand/i, reg:'msand'},
+    {pat:/gitti/i,              reg:'gitti'},
+    {pat:/hava/i,               reg:'hava'},
+    {pat:/dumper/i,             reg:'dumper'},
+    {pat:/murum|murrum|earth/i, reg:'murum'}
+  ];
+  var added=0;
+
+  S.trips.forEach(function(t){
+    var src=t.src||'';
+    if(!src) return;
+    // Find which register this trip belongs to
+    var reg=null;
+    for(var i=0;i<SRC_MAP.length;i++){
+      if(SRC_MAP[i].pat.test(src)){reg=SRC_MAP[i].reg;break;}
+    }
+    if(!reg) return;
+
+    // Detect site from src string
+    var site=/barela/i.test(src)?'Barela':'Bypass';
+
+    // Extract real party name from src — format is "M-SAND Bypass — Madan Yadav"
+    // Split on em-dash (—) or regular dash surrounded by spaces
+    var parts=src.split(/\s*[—\-]{1,2}\s*/);
+    var party=parts.length>1?parts[parts.length-1].trim():(t.party||'');
+    // If party looks like a src label (all caps, no spaces of real name), use t.party instead
+    if(!party||/^(M-SAND|GITTI|HAVA|DUMPER|MURUM|BYPASS|BARELA)/i.test(party)) party=t.party||'';
+
+    var tDate=toISO(t.date)||t.date;
+    var isTrip=(reg==='hava'||reg==='dumper');
+    var entry;
+
+    if(isTrip){
+      var mult=reg==='dumper'?300:600;
+      var trips=t.cum>0?Math.round(t.cum/mult):0;
+      entry={date:tDate, trips:trips, payment:'', site:site};
+      // Skip zero-trip entries from migration (garbage data)
+      if(trips<=0) return;
+    } else if(reg==='murum'){
+      // qty = CUM value (numeric), remark = chalan/src for reference
+      entry={date:tDate, qty:+(t.cum||0), remark:t.chalan||(t.src||'').split('—').pop().trim()||'', site:site};
+      if(!entry.qty||entry.qty<=0) return; // skip zero-cum murum entries
+    } else {
+      entry={date:tDate, party:party, qty:(t.cum||600)+' cft', site:site, remark:''};
+    }
+
+    // Check not already in lb (by date + site, loose match)
+    var exists=S.lb[reg].find(function(r){
+      return (toISO(r.date)||r.date)===tDate && (r.site||'Bypass')===site;
+    });
+    if(!exists){ S.lb[reg].push(entry); added++; }
+  });
+
+  if(added>0) save();
+  return added;
+}
+
+function fixAllDates(){
+  var fixed=0;
+  // Fix machineLogs
+  (S.machineLogs||[]).forEach(function(r){
+    var n=toISO(r.date); if(n&&n!==r.date){r.date=n;fixed++;}
+  });
+  // Fix trips
+  (S.trips||[]).forEach(function(t){
+    var n=toISO(t.date); if(n&&n!==t.date){t.date=n;fixed++;}
+  });
+  // Fix all logbook registers
+  if(S.lb){
+    ['murum','gitti','msand','hava','dumper'].forEach(function(reg){
+      (S.lb[reg]||[]).forEach(function(r){
+        var n=toISO(r.date); if(n&&n!==r.date){r.date=n;fixed++;}
+      });
+    });
+  }
+  // Also fix wrong year 2024→2026 if all other data is 2026
+  var allYears=new Set();
+  (S.machineLogs||[]).forEach(function(r){if(r.date)allYears.add(r.date.slice(0,4));});
+  (S.trips||[]).forEach(function(t){if(t.date)allYears.add(t.date.slice(0,4));});
+  var yearFixed=0;
+  if(allYears.has('2026')&&allYears.has('2024')){
+    if(confirm('Found entries with year 2024 mixed with 2026. Fix 2024→2026?')){
+      (S.machineLogs||[]).forEach(function(r){if((r.date||'').startsWith('2024-')){r.date=r.date.replace('2024-','2026-');yearFixed++;}});
+      (S.trips||[]).forEach(function(t){if((t.date||'').startsWith('2024-')){t.date=t.date.replace('2024-','2026-');yearFixed++;}});
+      if(S.lb){['murum','gitti','msand','hava','dumper'].forEach(function(reg){
+        (S.lb[reg]||[]).forEach(function(r){if((r.date||'').startsWith('2024-')){r.date=r.date.replace('2024-','2026-');yearFixed++;}});
+      });}
+    }
+  }
+  save(); render();
+  toast('\u2705 Fixed '+fixed+' date formats'+(yearFixed?' + '+yearFixed+' year corrections':''));
+}
+
 function restoreJSON(inp){
   const f=inp.files[0]; if(!f) return;
   const rd=new FileReader();
   rd.onload=()=>{ try{ const j=JSON.parse(rd.result);
     if(!j.company||!j.coa) throw new Error('Not a recognised backup file');
     if(!confirm('Restore this backup? Your current books in this browser will be replaced.')) return;
-    S=j; logAudit('C','Backup','—','Restored from uploaded backup'); save(); render();
-    toast('Backup restored');
+            if(!j.lb) j.lb={};
+            if(!j.lb.murum) j.lb.murum=[];
+            if(!j.lb.gitti) j.lb.gitti=[];
+            if(!j.lb.msand) j.lb.msand=[];
+            if(!j.lb.hava)  j.lb.hava=[];
+            if(!j.lb.dumper)j.lb.dumper=[];
+    S=j;
+    // Normalize dates immediately after restore
+    if(S.machineLogs) S.machineLogs.forEach(function(l){ l.date=toISO(l.date)||l.date; });
+    if(S.trips) S.trips.forEach(function(t){ t.date=toISO(t.date)||t.date; });
+    if(!S.lb) S.lb={};
+    ['murum','gitti','msand','hava','dumper'].forEach(function(k){ if(!S.lb[k]) S.lb[k]=[]; });
+    // Only migrate if logbook is completely empty (avoid adding on top of existing data)
+    var lbHasData=['msand','gitti','hava','dumper','murum'].some(function(k){
+      return S.lb&&S.lb[k]&&S.lb[k].length>0;
+    });
+    var migrated=lbHasData?0:migrateTripsToLb();
+    logAudit('C','Backup','—','Restored from uploaded backup');
+    save(); render();
+    toast('✅ Backup restored'+(migrated?' — '+migrated+' logbook entries added':' — logbook data preserved'));
   }catch(e){ toast('Could not read backup: '+e.message,true); } };
   rd.readAsText(f);
 }
@@ -3409,6 +4084,7 @@ const AIS = {
   chat      : [],
   stage     : 'idle',
   backendUrl: '/api/ai/document-scan',
+  lbDraft: null,
   geminiKey  : (()=>{ try{ return localStorage.getItem('kapl_gemini_key')||''; }catch(e){ return ''; } })(),
   geminiModel : (()=>{ try{
     const VALID=['gemini-2.5-flash','gemini-2.5-flash-lite','gemini-2.0-flash','gemini-2.0-flash-lite','gemini-1.5-flash','gemini-3.6-flash'];
@@ -3646,21 +4322,35 @@ Extract every row. "Nill" or "Null" = 0 cum. Ditto marks = same supplier as abov
 Return ONLY this JSON (no markdown, no explanation):
 {"documentType":"murum_trip_sheet","isRegister":true,"registerTitle":"MURUM","confidence":0.95,"lineItems":[{"date":"YYYY-MM-DD","supplierName":"","chalan":"","tipper":"","cum":0,"remarks":""}],"fields":{"vendorName":"","invoiceDate":"","total":0,"narration":"","site":""},"fieldConf":{},"partyMatch":{"matchedName":"","confidence":0},"siteMatch":{"matchedId":"","confidence":0},"warnings":[],"duplicateCheck":{"possibleDuplicate":false}}`;
 
-  const promptGeneral = `You are a construction accounting AI. Analyze this document image.
-Parties: ${partiesCtx}
-Sites: ${sitesCtx}
+  const promptGeneral = `You are a construction site logbook AI for Nirman Ledger. Analyze this image carefully.
 
-If this is a DAILY REGISTER / LOGBOOK with multiple rows:
-- JCB/Machine hour register → documentType:"jcb_machine_log", lineItems with openingReading, closingReading, hours, partyName
-- Murum/Earth/Material register → documentType:"murum_trip_sheet", lineItems with cum, supplierName, chalan
-- Labour muster → documentType:"labour_muster", lineItems with worker, present
+STEP 1: Identify document type:
+- Hard Murum/Earth trips register → documentType:"murum_trip_sheet"
+- M-Sand (manufactured sand) register → documentType:"msand"
+- Gitti (stone chips/aggregate) register → documentType:"gitti"  
+- Hava (blowing/compaction) register → documentType:"hava"
+- Dumper trips register → documentType:"dumper"
+- JCB/Excavator/Machine hour log → documentType:"jcb_machine_log"
+- Invoice/Bill/Receipt → documentType:"purchase_invoice" or "sales_invoice"
+- Anything else → documentType:"other"
 
-If this is a single INVOICE/BILL: extract vendor, invoice number, amounts, GST etc.
+STEP 2: Extract ALL rows. Look at page title/header to identify type.
 
-Return ONLY valid JSON (no markdown):
-{"documentType":"","isRegister":false,"registerTitle":"","confidence":0.9,"lineItems":[],"fields":{"vendorName":"","gstin":"","pan":"","invoiceNumber":"","invoiceDate":"","taxableValue":0,"cgst":0,"sgst":0,"igst":0,"total":0,"tds":0,"tdsSection":"","retention":0,"amountPayable":0,"narration":"","site":"","workOrderNumber":"","paymentMode":""},"fieldConf":{},"partyMatch":{"matchedName":"","confidence":0},"siteMatch":{"matchedId":"","confidence":0},"warnings":[],"duplicateCheck":{"possibleDuplicate":false}}
+For MURUM register: lineItems=[{date,supplierName,cum,chalan,remarks}]
+For M-SAND register: lineItems=[{date,party,qty,site,remark}] where site=Bypass or Barela from context
+For GITTI register: lineItems=[{date,party,qty,site,remark}]
+For HAVA register: lineItems=[{date,trips,payment,site}]
+For DUMPER register: lineItems=[{date,trips,payment,site}]
+For JCB/MACHINE: lineItems=[{date,partyName,openingReading,closingReading,hours,remarks}]
 
-Rules: dates as YYYY-MM-DD, Null/Nill=0, ditto marks=same value as row above, return ONLY JSON.`;
+Sites context: ${sitesCtx}
+If the page says "Page 8" or "Bypass" → site=Bypass. If "Page 13" or "Barela" → site=Barela.
+"Nill","Null","Mill","MILL" = mill day (skip or set trips=0). Ditto marks = same as row above.
+
+Return ONLY valid JSON (no markdown, no explanation):
+{"documentType":"","isRegister":true,"registerTitle":"","confidence":0.9,"lineItems":[],"fields":{"vendorName":"","invoiceNumber":"","invoiceDate":"","total":0,"narration":"","site":""},"fieldConf":{},"partyMatch":{"matchedName":"","confidence":0},"siteMatch":{"matchedId":"","confidence":0},"warnings":[],"duplicateCheck":{"possibleDuplicate":false}}
+
+Dates as dd/mm/yyyy or YYYY-MM-DD. Return ALL rows you can see. Return ONLY JSON.`;
 
   const prompt = isLikelyMlog ? promptJCB : isLikelyMurum ? promptMurum : promptGeneral;
 
@@ -3960,7 +4650,8 @@ function P_aiscan(){
     return h;
   }
 
-  // scan tab
+  // scan tab — sync lbDraft from persistent state
+  if(!AIS.lbDraft && S.lbDraft && AIS.stage==='review') AIS.lbDraft=S.lbDraft;
   h+=aiStageBar(AIS.stage);
 
   if(AIS.stage==='idle'){
@@ -3969,8 +4660,110 @@ function P_aiscan(){
             AIS.stage==='matching'||AIS.stage==='duplicating'||AIS.stage==='calculating'||
             AIS.stage==='classifying'){
     h+=aiRenderProcessing();
+  } else if(AIS.stage==='review' && AIS.lbDraft){
+    // Logbook review — show extracted entries for user to confirm/edit before saving
+    const ld=AIS.lbDraft;
+    const regLabels={'lb_msand':'M-Sand','lb_gitti':'Gitti 20mm','lb_hava':'Hava 600cft','lb_dumper':'Dumper 300cft','lb_murum':'Hard Murum','mlog':'Machine Log — JCB/Roller'};
+    const regLabel=regLabels[ld.target]||ld.target;
+    const isMlog=ld.target==='mlog';
+    let rows='';
+    // Calculate totals for mlog
+    var mlogTotalHrs=0, mlogWorkingDays=0, mlogNilDays=0;
+    ld.items.forEach(function(item,i){
+      const d=item.date||item.Date||'';
+      const del_btn='<td style="padding:4px"><button class="btn sm dngr gh" onclick="AIS.lbDraft.items.splice('+i+',1);renderAIScanPanel()">✕</button></td>';
+      if(isMlog){
+        const op=item.partyName||item.operator||item.operatorName||'';
+        const hmS=item.openingReading||item.hmStart||0;
+        const hmE=item.closingReading||item.hmEnd||0;
+        const hrs=item.hours||item.totalHours||(hmE>hmS?+(hmE-hmS).toFixed(1):0)||0;
+        const rem=item.remarks||item.remark||item.work||'';
+        if(+hrs>0){mlogTotalHrs+=+hrs; mlogWorkingDays++;} else mlogNilDays++;
+        var itemMtype=item.mtype||'jcb';
+        var machOpts=S.machines.map(function(m){
+          return '<option value="'+m.id+'"'+(item.machineId===m.id?' selected':'')+'>'+m.code+' — '+m.name+'</option>';
+        }).join('');
+        var siteOpts=S.sites.map(function(si){
+          return '<option value="'+si.id+'"'+(item.siteId===si.id?' selected':'')+'>'+si.code+' — '+si.name+'</option>';
+        }).join('');
+        rows+='<tr style="border-bottom:1px solid var(--line)'+(+hrs===0?';opacity:0.6':'')+'">'+
+          '<td style="padding:6px 8px"><input class="in" style="width:95px;padding:3px 6px;font-size:12px" value="'+esc(d)+'" onchange="AIS.lbDraft.items['+i+'].date=this.value"></td>'+
+          '<td style="padding:6px 8px"><input class="in" style="width:110px;padding:3px 6px;font-size:12px" value="'+esc(op)+'" onchange="AIS.lbDraft.items['+i+'].partyName=this.value;AIS.lbDraft.items['+i+'].operator=this.value"></td>'+
+          '<td style="padding:6px 8px"><input class="in" style="width:75px;padding:3px 6px;font-size:12px;text-align:right" value="'+esc(String(hmS||''))+'" onchange="AIS.lbDraft.items['+i+'].openingReading=parseFloat(this.value)||0;AIS.lbDraft.items['+i+'].hmStart=parseFloat(this.value)||0"></td>'+
+          '<td style="padding:6px 8px"><input class="in" style="width:75px;padding:3px 6px;font-size:12px;text-align:right" value="'+esc(String(hmE||''))+'" onchange="AIS.lbDraft.items['+i+'].closingReading=parseFloat(this.value)||0;AIS.lbDraft.items['+i+'].hmEnd=parseFloat(this.value)||0"></td>'+
+          '<td style="padding:6px 8px;text-align:center;font-weight:600;color:'+(+hrs>0?'var(--ok)':'var(--muted)')+'">'+esc(String(hrs||'—'))+'</td>'+
+          '<td style="padding:4px 6px"><select class="in" style="padding:3px 5px;font-size:11px;width:100px" onchange="AIS.lbDraft.items['+i+'].mtype=this.value">'+
+            '<option value="jcb"'+(itemMtype!=='roller'?' selected':'')+'>🚜 JCB</option>'+
+            '<option value="roller"'+(itemMtype==='roller'?' selected':'')+'>🛞 Roller</option>'+
+          '</select></td>'+
+          '<td style="padding:4px 6px"><select class="in" style="padding:3px 5px;font-size:11px;width:110px" onchange="AIS.lbDraft.items['+i+'].machineId=this.value">'+machOpts+'</select></td>'+
+          '<td style="padding:4px 6px"><select class="in" style="padding:3px 5px;font-size:11px;width:100px" onchange="AIS.lbDraft.items['+i+'].siteId=this.value">'+siteOpts+'</select></td>'+
+          '<td style="padding:6px 8px"><input class="in" style="width:90px;padding:3px 6px;font-size:12px" value="'+esc(rem)+'" onchange="AIS.lbDraft.items['+i+'].remarks=this.value;AIS.lbDraft.items['+i+'].work=this.value"></td>'+
+          del_btn+'</tr>';
+      } else {
+        const q=item.trips||item.qty||item.cum||item.quantity||'';
+        const p=item.payment||item.partyName||item.party||item.supplierName||'';
+        const s=item.site||'Bypass';
+        const r=item.remarks||item.remark||item.chalan||'';
+        rows+='<tr style="border-bottom:1px solid var(--line)">'+
+          '<td style="padding:6px 8px"><input class="in" style="width:100px;padding:3px 6px;font-size:12px" value="'+esc(d)+'" onchange="AIS.lbDraft.items['+i+'].date=this.value"></td>'+
+          '<td style="padding:6px 8px"><input class="in" style="width:70px;padding:3px 6px;font-size:12px" value="'+esc(String(q||''))+'" onchange="AIS.lbDraft.items['+i+'].qty=this.value;AIS.lbDraft.items['+i+'].trips=this.value"></td>'+
+          '<td style="padding:6px 8px"><input class="in" style="width:110px;padding:3px 6px;font-size:12px" value="'+esc(p)+'" onchange="AIS.lbDraft.items['+i+'].party=this.value;AIS.lbDraft.items['+i+'].partyName=this.value"></td>'+
+          '<td style="padding:6px 8px"><select class="in" style="padding:3px 6px;font-size:12px" onchange="AIS.lbDraft.items['+i+'].site=this.value">'+
+            '<option value="Bypass"'+(s!=='Barela'?' selected':'')+'>Bypass</option>'+
+            '<option value="Barela"'+(s==='Barela'?' selected':'')+'>Barela</option>'+
+          '</select></td>'+
+          '<td style="padding:6px 8px"><input class="in" style="width:100px;padding:3px 6px;font-size:12px" value="'+esc(r)+'" onchange="AIS.lbDraft.items['+i+'].remark=this.value"></td>'+
+          del_btn+'</tr>';
+      }
+    });
+    const theadMlog='<tr><th style="padding:6px 8px">Date</th><th style="padding:6px 8px">Operator</th><th style="padding:6px 8px">Opening</th><th style="padding:6px 8px">Closing</th><th style="padding:6px 8px">Hrs</th><th style="padding:6px 8px">Type</th><th style="padding:6px 8px">Machine</th><th style="padding:6px 8px">Site</th><th style="padding:6px 8px">Remarks</th><th></th></tr>';
+    const theadLb='<tr><th style="padding:6px 8px">Date</th><th style="padding:6px 8px">Qty/Trips</th><th style="padding:6px 8px">Party/Name</th><th style="padding:6px 8px">Site</th><th style="padding:6px 8px">Remark</th><th></th></tr>';
+    const summaryBar=isMlog?('<div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap"><span class="pill a">'+mlogTotalHrs.toFixed(1)+' hrs total</span><span class="pill g">'+mlogWorkingDays+' working days</span><span class="pill w">'+mlogNilDays+' nil days</span></div>'):'';
+    h+=`<div style="background:var(--good-soft);color:var(--good);padding:10px 16px;border-radius:6px;margin-bottom:16px;font-size:13px">
+      ✅ <b>AI detected ${ld.items.length} entr${ld.items.length>1?'ies':'y'} from ${esc(ld.title||regLabel)}</b> — Review and edit below, then click <b>Confirm & Save</b>.
+    </div>
+    ${summaryBar}
+    <div class="tw" style="margin-bottom:16px;overflow-x:auto"><table class="t" style="width:100%">
+      <thead>${isMlog?theadMlog:theadLb}</thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    ${isMlog?`<div style="background:var(--surface2,#1a1a1a);border:1px solid var(--line);border-radius:8px;padding:12px 16px;margin-bottom:14px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+      <b style="font-size:13px">Assign to:</b>
+      <label style="font-size:13px;display:flex;align-items:center;gap:6px">
+        <b>Machine Type:</b>
+        <select id="mlogMtypeReview" class="in" style="padding:4px 8px;font-size:13px" onchange="AIS.lbDraft.mtype=this.value">
+          <option value="jcb" ${(AIS.lbDraft&&AIS.lbDraft.mtype)==='roller'?'':'selected'}>🚜 JCB / Excavator</option>
+          <option value="roller" ${(AIS.lbDraft&&AIS.lbDraft.mtype)==='roller'?'selected':''}>🛞 Road Roller</option>
+        </select>
+      </label>
+      <label style="font-size:13px;display:flex;align-items:center;gap:6px">
+        <b>Machine:</b>
+        <select id="mlogMachineReview" class="in" style="padding:4px 8px;font-size:13px" onchange="AIS.lbDraft.machineId=this.value">
+          ${S.machines.map(m=>`<option value="${m.id}">${m.code} — ${m.name}</option>`).join('')}
+        </select>
+      </label>
+      <label style="font-size:13px;display:flex;align-items:center;gap:6px">
+        <b>Site:</b>
+        <select id="mlogSiteReview" class="in" style="padding:4px 8px;font-size:13px" onchange="AIS.lbDraft.siteId=this.value">
+          ${S.sites.map(s=>`<option value="${s.id}">${s.code} — ${s.name}</option>`).join('')}
+        </select>
+      </label>
+    </div>`:''}
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn pri" onclick="aiConfirmLogbook()">✅ Confirm & Save to ${regLabel}</button>
+      <button class="btn" onclick="AIS.stage='idle';AIS.lbDraft=null;S.lbDraft=null;save();renderAIScanPanel()">✖ Cancel — Discard</button>
+    </div>`;
+    return h;
   } else if(AIS.stage==='review'){
-    h+=aiRenderReview();
+    // No lbDraft means normal invoice review
+    if(AIS.draft){
+      h+=aiRenderReview();
+    } else {
+      // Nothing to review — reset
+      AIS.stage='idle';
+      h+=aiRenderUploadZone();
+    }
   } else if(AIS.stage==='done'){
     h+='<div class="card"><div class="body" style="text-align:center;padding:40px 20px">'+
       '<div style="font-size:48px;margin-bottom:12px">✅</div>'+
@@ -4571,28 +5364,219 @@ function aiOpenCamera(){
   if(inp) inp.click();
 }
 
+/* ── Confirm logbook review and save ── */
+function aiConfirmLogbook(){
+  if(!AIS.lbDraft||!AIS.lbDraft.items||!AIS.lbDraft.items.length){
+    toast('No entries to save',true); return;
+  }
+  const ld=AIS.lbDraft;
+  const smSimple=ld.sm||{site:{name:'Bypass'}};
+  // For machine log: read selected mtype and machine from dropdowns
+  if(ld.target==='mlog'){
+    const mtSel=document.getElementById('mlogMtypeReview');
+    const mSel=document.getElementById('mlogMachineReview');
+    ld.mtype=mtSel?mtSel.value:'jcb';
+    ld.machineId=mSel?mSel.value:(S.machines[0]&&S.machines[0].id||'');
+    // Stamp each item with selected mtype and machineId
+    const siteSel=document.getElementById('mlogSiteReview');
+    ld.siteId=siteSel?siteSel.value:(S.sites[0]&&S.sites[0].id||'');
+    ld.items.forEach(function(item){
+      item.mtype=ld.mtype;
+      item.machineId=ld.machineId;
+      item.siteId=ld.siteId;
+    });
+  }
+  aiPostToLogbook(ld.target, ld.items, ld.title, smSimple);
+  AIS.lbDraft=null;
+  S.lbDraft=null;
+  save();
+}
+
+/* ── Route scanned logbook data to the correct register ── */
+function aiPostToLogbook(page, lineItems, title, siteMatch){
+  if(!S.lb) S.lb={};
+  // Determine register name from page
+  const regMap={'lb_msand':'msand','lb_gitti':'gitti','lb_hava':'hava','lb_dumper':'dumper','lb_murum':null,'mlog':null};
+  const reg=regMap[page];
+
+  // Detect site from siteMatch or from register title
+  const defaultSite=(siteMatch&&siteMatch.site&&siteMatch.site.name)||'Bypass';
+  const siteIsBarela=defaultSite.toLowerCase().includes('barela');
+
+  if(page==='mlog'){
+    // Machine log entries
+    const added=[];
+    lineItems.forEach(item=>{
+      const rawDate=item.date||item.Date||'';
+      const entry={
+        id:uid(), billed:'',
+        date:toISO(rawDate)||rawDate,
+        mtype:item.mtype||'jcb',
+        machine:item.machineId||(S.machines.find(function(m){return m.cat===(item.mtype||'jcb');})||S.machines[0]||{}).id||'',
+        site:item.siteId||S.sites[0]&&S.sites[0].id||'',
+        operator:item.partyName||item.operator||item.operatorName||'',
+        hmStart:+(item.openingReading||item.hmStart||0),
+        hmEnd:+(item.closingReading||item.hmEnd||0),
+        hours:+(item.hours||item.totalHours||0),
+        diesel:+(item.diesel||0),
+        work:item.remarks||item.work||''
+      };
+      if(entry.hours<=0&&entry.hmEnd>entry.hmStart) entry.hours=+(entry.hmEnd-entry.hmStart).toFixed(2);
+      S.machineLogs.push(entry);
+      added.push(entry);
+    });
+    save(); go('mlog');
+    toast('✅ '+added.length+' machine log entries added from photo');
+    return;
+  }
+
+  if(page==='lb_murum'){
+    // Murum goes to S.lb.murum (Hard Murum logbook)
+    if(!S.lb.murum) S.lb.murum=[];
+    const added=[];
+    lineItems.forEach(item=>{
+      const qty=+(item.cum||item.qty||item.quantity||item.trips||0);
+      const itemDate=item.date||item.Date||'';
+      if(!itemDate) return;
+      // Dedup check
+      const dup=S.lb.murum.find(function(r){return r.date===itemDate&&+r.qty===qty;});
+      if(dup) return;
+      const entry={
+        date:itemDate,
+        qty:qty,
+        remark:item.remarks||item.remark||item.chalan||item.supplierName||''
+      };
+      S.lb.murum.push(entry);
+      added.push(entry);
+    });
+    save(); go('lb_murum');
+    toast('✅ '+added.length+' entries added to Hard Murum logbook');
+    return;
+  }
+
+  // All other logbook registers (msand, gitti, hava, dumper)
+  if(!S.lb[reg]) S.lb[reg]=[];
+  const isTrip=(reg==='hava'||reg==='dumper');
+  const added=[];
+  lineItems.forEach(item=>{
+    if(!item.date&&!item.Date) return;
+    const itemDate=item.date||item.Date||'';
+    // Auto-detect site from item content
+    const itemText=JSON.stringify(item).toLowerCase();
+    const itemSite=itemText.includes('barela')?'Barela':(itemText.includes('bypass')?'Bypass':(siteIsBarela?'Barela':'Bypass'));
+    let entry;
+    if(isTrip){
+      entry={
+        date:itemDate,
+        trips:+(item.trips||item.qty||item.quantity||0),
+        payment:item.payment||item.amount||'',
+        site:itemSite
+      };
+    } else {
+      entry={
+        date:itemDate,
+        party:item.party||item.partyName||item.supplierName||'',
+        qty:item.qty||item.quantity||item.cum||'600 cft',
+        site:itemSite,
+        remark:item.remarks||item.remark||item.chalan||''
+      };
+    }
+    S.lb[reg].push(entry);
+    added.push(entry);
+
+    // Also add to S.trips for Trip Sheet visibility
+  });
+  save(); go(page);
+  toast('✅ '+added.length+' entries saved to '+title+' logbook');
+}
+
 /* ── orchestrate scan ── */
 async function aiRunScan(){
   if(!AIS.file) return;
-  const PROGRESS=['uploading','analyzing','extracting','matching','duplicating','calculating','classifying'];
-  let pi=0;
-  const tick=()=>{
-    AIS.stage=PROGRESS[Math.min(pi,PROGRESS.length-1)];pi++;
-    renderAIScanPanel();
-  };
-  tick();
-  const progressTimer=setInterval(()=>{if(pi<PROGRESS.length-1)tick();},1000);
+  // Manual stage — no auto-tick timer that can get stuck
+  const progressTimer=null; // kept for clearInterval() calls below (no-ops)
+  AIS.stage='uploading'; renderAIScanPanel();
+  await new Promise(r=>setTimeout(r,300));
+  AIS.stage='analyzing'; renderAIScanPanel();
 
   try{
     const raw=await aiScanDocument(AIS.file);
-    clearInterval(progressTimer);
+    AIS.stage='extracting'; renderAIScanPanel();
 
     // Validate JSON shape
     if(!raw||!raw.documentType){
       throw new Error('AI returned an unexpected response. Check the backend /api/ai/document-scan endpoint.');
     }
 
-    // Party & site matching — use Gemini's resolved match first, fallback to local
+    // ── LOGBOOK ROUTING — runs FIRST, before any accounting logic ────
+    const LOGBOOK_TYPES={
+      'msand':'lb_msand','msand':'lb_msand','m_sand':'lb_msand','sand':'lb_msand','manufactured':'lb_msand',
+      'gitti':'lb_gitti','gitti_20mm':'lb_gitti','stone':'lb_gitti','chips':'lb_gitti','aggregate':'lb_gitti',
+      'hava':'lb_hava','hava_600':'lb_hava','blowing':'lb_hava','compaction':'lb_hava',
+      'dumper':'lb_dumper','dumper_300':'lb_dumper','tipper':'lb_dumper',
+      'murum':'lb_murum','murum_trip':'lb_murum','murum_trip_sheet':'lb_murum',
+      'hard_murum':'lb_murum','earth':'lb_murum','soil':'lb_murum','murrum':'lb_murum',
+      'jcb_machine_log':'mlog','machine_log':'mlog','jcb':'mlog','excavator':'mlog','backhoe':'mlog',
+      'labour_muster':'skip','muster':'skip','attendance':'skip'
+    };
+    const dtLower=(raw.documentType||'').toLowerCase().replace(/[^a-z0-9]/g,'_');
+    const titleLower=(raw.registerTitle||'').toLowerCase();
+    const rawStr=(dtLower+' '+titleLower);
+    let lbTarget=null;
+    for(const [key,page] of Object.entries(LOGBOOK_TYPES)){
+      if(rawStr.includes(key)){lbTarget=page;break;}
+    }
+    if(!lbTarget){
+      if(/m[\s-]?sand/.test(rawStr)) lbTarget='lb_msand';
+      else if(/gitti/.test(rawStr)) lbTarget='lb_gitti';
+      else if(/hava/.test(rawStr)) lbTarget='lb_hava';
+      else if(/dumper/.test(rawStr)) lbTarget='lb_dumper';
+      else if(/murum|murrum|earth|soil/.test(rawStr)) lbTarget='lb_murum';
+      else if(/jcb|machine|excavat|roller/.test(rawStr)) lbTarget='mlog';
+      // Detect from isRegister flag — any register page is a logbook
+      else if(raw.isRegister && raw.lineItems && raw.lineItems.length){
+        // Try to guess from line items content
+        const liStr=JSON.stringify(raw.lineItems).toLowerCase();
+        if(/msand|m-sand|m_sand|sand/.test(liStr)) lbTarget='lb_msand';
+        else if(/gitti/.test(liStr)) lbTarget='lb_gitti';
+        else if(/hava/.test(liStr)) lbTarget='lb_hava';
+        else if(/dumper/.test(liStr)) lbTarget='lb_dumper';
+        else if(/murum|murrum|earth/.test(liStr)) lbTarget='lb_murum';
+        else if(/jcb|machine|hour|reading/.test(liStr)) lbTarget='mlog';
+      }
+    }
+
+    if(lbTarget){
+      if(lbTarget==='skip'){
+        AIS.stage='idle';
+        toast('Detected as attendance/muster — use Logbook section to enter manually.',true);
+        renderAIScanPanel();
+        return;
+      }
+      // Simple site detection
+      const smSimple={site:{id:S.sites[0]&&S.sites[0].id||'',name:'Bypass'}};
+      if((raw.registerTitle||'').toLowerCase().includes('barela')||
+         (raw.fields&&raw.fields.site||'').toLowerCase().includes('barela')){
+        smSimple.site={id:S.sites[1]&&S.sites[1].id||'',name:'Barela'};
+      }
+      if(raw.lineItems && raw.lineItems.length){
+        // ── SHOW REVIEW SCREEN before saving — store in S so it survives re-render ──
+        S.lbDraft={target:lbTarget, items:raw.lineItems, title:raw.registerTitle||raw.documentType, sm:smSimple};
+        save();
+        AIS.stage='review';
+        AIS.lbDraft=S.lbDraft; // sync to AIS for this render
+        renderAIScanPanel();
+        return;
+      } else {
+        AIS.stage='idle';
+        toast('Detected as logbook page but no entries extracted. Try a clearer/closer photo.',true);
+        renderAIScanPanel();
+        return;
+      }
+    }
+    // ── END LOGBOOK ROUTING — only invoices/bills reach below ─────────
+
+    // Party & site matching — for invoices only
     const pm = raw._resolvedParty
       ? { type:'matched', party:raw._resolvedParty, score:1.0 }
       : aiMatchParty(raw.fields?.vendorName||raw.fields?.customerName,
@@ -4607,7 +5591,7 @@ async function aiRunScan(){
     const amount=parseFloat(raw.fields?.total||raw.fields?.invoiceTotal||raw.fields?.taxableValue||0);
     const dup=aiCheckDuplicate(raw.documentType,raw.fields?.invoiceNumber,amount,partyId,raw.fields?.invoiceDate);
 
-    // Build draft
+    // Build draft (for invoices/bills — normal accounting flow)
     const draft={
       documentType   : raw.documentType,
       confidence     : raw.confidence||0.7,
@@ -4863,6 +5847,629 @@ function P_wainbox(){
   return h;
 }
 
+/* ========== LOGBOOK PAGES ========== */
+function lbTable(cols, rows){
+  let h=`<div class="tw"><table class="t"><thead><tr>`;
+  cols.forEach(c=>{ h+=`<th>${esc(c)}</th>`; });
+  h+=`</tr></thead><tbody>`;
+  rows.forEach(r=>{
+    const cls=r._total?' style="font-weight:700;background:var(--surface-2)"':'';
+    h+=`<tr${cls}>`;
+    r.cells.forEach(c=>{ h+=`<td>${c||'—'}</td>`; });
+    h+=`</tr>`;
+  });
+  h+=`</tbody></table></div>`;
+  return h;
+}
+function lbTiles(items){ return `<div class="tiles">${items.map(t=>`<div class="tile ${t.cls||''}"><div class="k">${t.k}</div><div class="v">${t.v}</div>${t.n?`<div class="n">${t.n}</div>`:''}</div>`).join('')}</div>`; }
+
+/* --- Road Roller --- */
+/* --- Machine Log --- */
+function P_lb_machine(){
+  let h=pageHead('Machine Log','Operator: Madam Yadav · Pages 6 & 8','');
+  h+=lbTiles([
+    {cls:'a',k:'Operator',v:'Madam Yadav'},
+    {cls:'g',k:'Page 8 Total',v:'99.5 hrs',n:'May–Jun 2026'},
+    {cls:'s',k:'Page 6 Total',v:'~122.3 hrs',n:'Jul–Aug 2026'},
+    {cls:'c',k:'MILL Days (Pg 6)',v:'4 days'}
+  ]);
+
+  h+=`<div class="card" style="margin-bottom:14px"><header><h3>Page 8 — May / June 2026</h3><span class="sub">Reading 4522.2 → 4774.2</span></header>`;
+  h+=lbTable(['Date','ON Reading','OFF Reading','Hours','Remark'],[
+    {cells:['3/5–8/5/2026','4522.2','4532.4','10.2','—']},
+    {cells:['11/05/2026','4546.1','4546.9','0.8','—']},
+    {cells:['11/05/2026','4546.9','4548.3','1.4','Ravi Sir']},
+    {cells:['11/07/2026','4548.3','4553.3','5.1','—']},
+    {cells:['12/05/2026','4579.6','4580.3','0.7','—']},
+    {cells:['01/06/2026','4575.7','4679.3','3.6','Barely']},
+    {cells:['02/06/2026','<span class="pill w">OTHER STOCK</span>','','','—']},
+    {cells:['02/06/2026','4879.3','4687.9','8.6','—']},
+    {cells:['02/06/2026','4687.9','4696.9','8','—']},
+    {cells:['03/06/2026','4696.19','4704.8','7.9','—']},
+    {cells:['04/06/2026','4704.8','4712.6','7.8','—']},
+    {cells:['04/06/2026','4712.6','4716.6','4','—']},
+    {cells:['05/06/2026','4716.6','4724.4','7.8','—']},
+    {cells:['06/06/2026','4724.4','4731.0','6.6','—']},
+    {cells:['06/06/2026','4731.00','4741.4','10.4','—']},
+    {cells:['07/06/2026','4741.4','4748.9','7.5','—']},
+    {cells:['07/06/2026','4748.9','4757.00','8.1','—']},
+    {cells:['08/06/2026','4757.00','4765.2','8.2','—']},
+    {cells:['08/06/2026','4765.2','4774.2','9','—']},
+    {_total:true,cells:['PAGE 8 TOTAL','','','99.5 hrs','']}
+  ]);
+  h+=`</div>`;
+
+  h+=`<div class="card"><header><h3>Page 6 — July / August 2026</h3><span class="sub">Reading 5051.8 → 5164.1</span></header>`;
+  h+=lbTable(['Date','ON Reading','OFF Reading','Hours','Remark'],[
+    {cells:['23/07/2026','<span class="pill c">MILL</span>','','','Workshop']},
+    {cells:['24/07/2026','<span class="pill c">MILL</span>','','','Workshop']},
+    {cells:['24/07/2026','5051.8','5059.6','7.8','—']},
+    {cells:['25/07/2026','5059.6','5067.9','8.3','—']},
+    {cells:['26/07/2026','5067.9','5075.5','7.6','—']},
+    {cells:['27/07/2026','5075.5','5082.5','7.3','—']},
+    {cells:['28/07/2026','5082.5','<span class="pill c">MILL</span>','MILL','Workshop']},
+    {cells:['29/07/2026','5082.5','<span class="pill c">MILL</span>','MILL','Workshop']},
+    {cells:['30/07/2026','5082.5','5088.4','6','→']},
+    {cells:['31/07/2026','5088.4','5095.4','7','—']},
+    {cells:['01/08/2026','5095.4','5102.7','7.3','—']},
+    {cells:['02/08/2026','5102.7','5109.7','7','—']},
+    {cells:['03/08/2026','5109.7','5116.8','7.1','—']},
+    {cells:['04/08/2026','5116.8','5124.5','7.7','—']},
+    {cells:['05/08/2026','5124.5','5129.5','5','—']},
+    {cells:['06/08/2026','5129.5','5133.7','4.2','—']},
+    {cells:['07/08/2026','5133.7','5139.8','6.1','—']},
+    {cells:['08/08/2026','5139.8','5144.0','4.2','—']},
+    {cells:['09/08/2026','<span class="pill c">MILL</span>','','','Workshop']},
+    {cells:['10/08/2026','<span class="pill c">MILL</span>','','','Workshop']},
+    {cells:['11/08/2026','5144.0','5151.4','7.4','—']},
+    {cells:['12/08/2026','<span class="pill c">MILL</span>','','','Workshop']},
+    {cells:['13/08/2026','5151.4','5156.7','5.3','—']},
+    {cells:['14/08/2026','5156.7','5164.1','7.4','—']},
+    {_total:true,cells:['PAGE 6 TOTAL (Working Days)','','','~122.3 hrs','']}
+  ]);
+  h+=`</div>`;
+  return h;
+}
+
+/* --- Hard Murum --- */
+function P_lb_murum(){
+  if(!S.lb) S.lb={};
+  if(!S.lb.murum) S.lb.murum=[];
+  S.lb.murum.sort(function(a,b){return (toISO(a.date)||a.date)<(toISO(b.date)||b.date)?1:-1;});
+  S.lb.murum.sort(function(a,b){return (toISO(a.date)||a.date)<(toISO(b.date)||b.date)?1:-1;});
+  var all=S.lb.murum;
+  var total=all.reduce(function(s,r){return s+(+r.qty||0);},0);
+  var clearBtn='<button class="btn sm dngr" onclick="if(confirm(\'Clear all Hard Murum entries?\')){'+'S.lb.murum=[];save();render();}">🗑 Clear All</button>';
+  let h=pageHead('Hard Murum Register','Madan Yadav · Click any cell to edit · Grand Total: '+total+' Trips',
+    '<button class="btn sm" style="background:rgba(99,179,237,0.15);color:#63b3ed" onclick="fixAllDates()">📅 Fix Dates</button>'+
+    '<button class="btn sm" onclick="lbDedup(\'murum\')">🧹 Dedup</button>'+clearBtn);
+  var murumCUM=all.reduce(function(s,r){return s+(+r.qty||0);},0);
+  h+=lbTiles([
+    {cls:'a',k:'Total Trips',v:total,n:murumCUM+' CUM'},
+    {cls:'g',k:'Entries',v:all.length,n:'Rows recorded'},
+    {cls:'s',k:'Total CUM',v:murumCUM+' cum',n:'Cubic Metres'}
+  ]);
+  h+='<div class="card"><header><h3>Hard Murum — All Entries</h3><span class="sub">Click any cell to edit · Add rows below</span></header>';
+  h+=lbEditableTable('murum',['Date','CUM / Trips','Page / Remark'],all,all.map(function(_,i){return i;}));
+  h+=lbFooter('murum','Bypass');
+  h+='</div>';
+  return h;
+}
+
+
+function lbEditRow(register,idx,col,val){
+  if(!S.lb||!S.lb[register]||!S.lb[register][idx]) return;
+  S.lb[register][idx][col]=val;
+  // Auto-detect site from remark: "barela" → Barela, else Bypass
+  if(col==='remark'||col==='site'||col==='date'||col==='party'){
+    if(col==='remark'&&val){
+      var low=val.toLowerCase();
+      var detectedSite=low.indexOf('barela')>=0?'Barela':'Bypass';
+      S.lb[register][idx]['site']=detectedSite;
+    }
+  }
+  save(); render(); // re-render so totals and CFT update immediately
+}
+function lbDeleteRow(register,idx){
+  try{
+    if(!S.lb) S.lb={};
+    if(!S.lb[register]) S.lb[register]=[];
+    if(idx<0||idx>=S.lb[register].length){ toast('Row not found',true); return; }
+    S.lb[register].splice(idx,1);
+    save(); render();
+    toast('Deleted');
+  } catch(e){ toast('Error: '+e.message,true); }
+}
+function lbAddRow(register){
+  if(!S.lb) S.lb={};
+  if(!S.lb[register]) S.lb[register]=[];
+  const templates={
+    gitti:{date:'',party:'',qty:'600 cft',site:'Bypass',remark:''},
+    msand:{date:'',party:'',qty:'600 cft',site:'Bypass',remark:''},
+    hava:{date:'',trips:0,payment:'',site:'Bypass'},
+    dumper:{date:'',trips:0,payment:'',site:'Bypass'},
+    murum:{date:'',qty:0,remark:''}
+  };
+  const newRow={...(templates[register]||{date:'',site:'Bypass'})};
+  S.lb[register].push(newRow);
+  save();
+  render();
+  // After render, focus the first editable cell of the new row
+  setTimeout(function(){
+    var rows=document.querySelectorAll('tbody tr');
+    if(rows.length){
+      var lastRow=rows[rows.length-1];
+      var firstCell=lastRow.querySelector('span[contenteditable]');
+      if(firstCell){firstCell.focus();}
+    }
+  },100);
+}
+function lbAiAdd(register){
+  const promptEl=document.getElementById('lb-ai-prompt-'+register);
+  const prompt=promptEl?promptEl.value.trim():'';
+  const btn=document.getElementById('lb-ai-btn-'+register);
+  const isTrip=(register==='hava'||register==='dumper');
+  const schema=isTrip
+    ?'JSON array of objects, each with: date (string dd/mm/yyyy), trips (number), payment (string), site ("Bypass" or "Barela")'
+    :'JSON array of objects, each with: date (string dd/mm/yyyy), party (string), qty (string e.g. "600 cft"), site ("Bypass" or "Barela"), remark (string)';
+
+  function callAI(msgContent){
+    if(btn){btn.disabled=true; btn.textContent='AI reading...';}
+    fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-6',
+        max_tokens:1000,
+        messages:[{role:'user',content:msgContent}]
+      })
+    })
+    .then(r=>r.json())
+    .then(d=>{
+      const text=d.content.map(c=>c.text||'').join('');
+      const clean=text.replace(/```json|```/g,'').trim();
+      // find JSON array in response
+      const match=clean.match(/\[[\s\S]*\]/);
+      if(!match) throw new Error('No JSON array found in AI response');
+      const arr=JSON.parse(match[0]);
+      if(!Array.isArray(arr)||!arr.length) throw new Error('AI returned empty list');
+      if(!S.lb[register]) S.lb[register]=[];
+      arr.forEach(obj=>S.lb[register].push(obj));
+      save(); render();
+      toast('✅ '+arr.length+' row'+(arr.length>1?'s':'')+' added by AI');
+      if(promptEl) promptEl.value='';
+    })
+    .catch(e=>{ alert('AI error: '+e.message); })
+    .finally(()=>{if(btn){btn.disabled=false; btn.textContent='✨ AI Add';}});
+  }
+
+  // Check if image file is selected
+  const imgEl=document.getElementById('lb-ai-img-'+register);
+  if(imgEl&&imgEl.files&&imgEl.files[0]){
+    const file=imgEl.files[0];
+    const reader=new FileReader();
+    reader.onload=function(ev){
+      const b64=ev.target.result.split(',')[1];
+      const mt=file.type||'image/jpeg';
+      const instructions='This is a photo of a construction site logbook page. Extract ALL entries as '+schema+'. For site: if the page header or entry mentions "Barela" use "Barela", otherwise use "Bypass". Return ONLY the JSON array, no explanation.';
+      callAI([
+        {type:'image',source:{type:'base64',media_type:mt,data:b64}},
+        {type:'text',text:instructions+(prompt?' Also note: '+prompt:'')}
+      ]);
+    };
+    reader.readAsDataURL(file);
+    return;
+  }
+
+  // Text-only
+  if(!prompt){alert('Type a description or upload a photo first');return;}
+  callAI('Extract logbook entries from this text and return ONLY a '+schema+'. Auto-detect site: "barela"→Barela else Bypass. Text: "'+prompt+'"');
+}
+/* ---- Core editable table — pass real global indices ---- */
+function lbFindDupIndices(register){
+  if(!S.lb||!S.lb[register]) return {};
+  var seen={}, dups={};
+  S.lb[register].forEach(function(r,i){
+    if(r._nodup) return; // user marked this as "not a duplicate" - skip
+    var d=(r.date||'').replace(/[^0-9]/g,'');
+    var q=String(r.trips||r.qty||'').replace(/[^0-9]/g,'');
+    var p=(r.party||'').toLowerCase().trim();
+    var s=(r.site||'');
+    var key=d+'|'+q+'|'+p+'|'+s;
+    if(seen[key]!==undefined){ dups[i]=true; dups[seen[key]]=true; }
+    else seen[key]=i;
+  });
+  return dups;
+}
+function lbMarkNotDup(register,idx){
+  if(!S.lb||!S.lb[register]||!S.lb[register][idx]) return;
+  S.lb[register][idx]._nodup=true;
+  save(); render();
+  toast('\u2705 Marked as genuine entry — will no longer show as duplicate');
+}
+function lbEditableTable(register, cols, rows, realIndices){
+  if(!rows||!rows.length) return '<p class="hint" style="padding:12px 16px">No entries yet — use + Add Row below.</p>';
+  // USE SINGLE QUOTES inside onclick to avoid breaking HTML attribute double quotes
+  var rq="'"+register+"'";
+  var dupIndices=lbFindDupIndices(register);
+  var h='<div class="tw" style="overflow-x:auto"><table class="t"><thead><tr>';
+  cols.forEach(function(c){h+='<th>'+c+'</th>';});
+  h+='<th style="width:40px"></th></tr></thead><tbody>';
+  rows.forEach(function(r,i){
+    var realIdx=Array.isArray(realIndices)?realIndices[i]:i;
+    var isDup=dupIndices[realIdx];
+    h+='<tr style="'+(isDup?'background:rgba(220,50,50,0.08);outline:1px solid rgba(220,50,50,0.3)':'')+'">';
+    Object.keys(r).forEach(function(k){
+      var kq="'"+k+"'";
+      var v=r[k]!=null?r[k]:'';
+      if(k==='site'){
+        h+='<td><select style="padding:3px 6px;border-radius:4px;background:var(--surface);color:var(--fg);border:1px solid var(--line);font-size:0.82rem" onchange="lbEditRow('+rq+','+realIdx+','+kq+',this.value);render()">'+
+          '<option value="Bypass"'+(v==='Bypass'?' selected':'')+'>Bypass</option>'+
+          '<option value="Barela"'+(v==='Barela'?' selected':'')+'>Barela</option>'+
+          '</select></td>';
+      } else {
+        var isRemark=(k==='remark');
+        var minW=k==='date'?'90px':k==='party'?'110px':k==='qty'?'70px':k==='trips'?'50px':k==='payment'?'70px':'80px';
+        var onblur=isRemark
+          ?'lbEditRow('+rq+','+realIdx+','+kq+',this.textContent.trim());render()'
+          :'lbEditRow('+rq+','+realIdx+','+kq+',this.textContent.trim())';
+        h+='<td><span style="display:block;min-width:'+minW+';padding:3px 5px;border-radius:4px;cursor:text;border-bottom:1px dashed var(--line)" contenteditable="true" onblur="'+onblur+'">'+esc(String(v))+'</span></td>';
+      }
+    });
+    var dupBtnHtml=isDup
+      ?'<button class="btn sm" style="padding:1px 5px;font-size:10px;margin-right:2px;background:rgba(220,50,50,0.15);color:var(--crit,#e53);border:1px solid rgba(220,50,50,0.4)" onclick="lbMarkNotDup('+rq+','+realIdx+')" title="Mark as genuine — not a duplicate">DUP ✓?</button>'
+      :'';
+    h+='<td style="white-space:nowrap">'+dupBtnHtml+
+      '<button class="btn sm dngr gh" style="padding:2px 8px;font-size:14px" onclick="lbDeleteRow('+rq+','+realIdx+')">✕</button></td></tr>';
+  });
+  h+='</tbody></table></div>';
+  return h;
+}
+function lbPhotoChange(reg){
+  // Called when photo is selected — update button label
+  var btn=document.getElementById('lb-ai-btn-'+reg);
+  if(btn) btn.textContent='✨ Read Photo';
+}
+function lbDedup(register){
+  if(!S.lb) S.lb={}; if(!S.lb[register]) S.lb[register]=[];
+  if(!S.trips) S.trips=[];
+  // 1. Dedup the logbook array
+  var before=S.lb[register].length;
+  var seen={};
+  S.lb[register]=S.lb[register].filter(function(r){
+    if(r._nodup) return true; // user marked as genuine — never auto-remove
+    var d=(r.date||'').replace(/[^0-9]/g,'');
+    var q=String(r.trips||r.qty||r.cum||'').replace(/[^0-9]/g,'');
+    var p=(r.party||r.partyName||'').toLowerCase().trim();
+    var s=(r.site||'');
+    // Include remark so same-date+qty but different remark = NOT a duplicate
+    var rm=(r.remark||r.remarks||'').toLowerCase().trim().slice(0,20);
+    var key=d+'|'+q+'|'+p+'|'+s+'|'+rm;
+    if(seen[key]) return false;
+    seen[key]=true; return true;
+  });
+  var removed=before-S.lb[register].length;
+  // Only dedup the logbook — never touch S.trips
+  save(); render();
+  toast(removed>0?'✅ Removed '+removed+' duplicate'+(removed>1?'s':''):'✅ No duplicates found');
+}
+function lbFooter(register, defaultSite){
+  var site=defaultSite||'Bypass';
+  // SINGLE QUOTES inside onclick to avoid breaking HTML double-quote attributes
+  var rq="'"+register+"'";
+  var sq="'"+site+"'";
+  var pid='lb-ai-prompt-'+register+'-'+site;
+  var iid='lb-ai-img-'+register+'-'+site;
+  var bid='lb-ai-btn-'+register+'-'+site;
+  return '<div style="display:flex;gap:8px;align-items:center;padding:10px 14px;border-top:1px solid var(--line);flex-wrap:wrap;background:var(--surface2)">'+
+    '<button class="btn sm pri" onclick="lbAddRowSite('+rq+','+sq+')">+ Add Row</button>'+
+    '<button class="btn sm" onclick="lbBulkAdd('+rq+','+sq+')">📋 Bulk Add</button>'+
+    '<button class="btn sm" onclick="lbDedup('+rq+')">🧹 Dedup</button>'+
+    '<input id="'+pid+'" class="in" style="flex:1;min-width:120px;font-size:0.82rem;padding:5px 10px" placeholder="Type or upload photo...">'+
+    '<label class="btn sm" style="cursor:pointer;margin:0">📷<input id="'+iid+'" type="file" accept="image/*" style="display:none" onchange="lbPhotoChangeSite('+rq+','+sq+')"></label>'+
+    '<button id="'+bid+'" class="btn sm pri" onclick="lbAiAddSite('+rq+','+sq+')">✨ AI Add</button>'+
+  '</div>';
+}
+function lbPhotoChangeSite(register,site){
+  var btn=document.getElementById('lb-ai-btn-'+register+'-'+site);
+  if(btn) btn.textContent='📷 Read Photo';
+  // Also trigger AI add automatically when photo selected
+  lbAiAddSite(register,site);
+}
+function lbBulkAdd(register,site){
+  var rq="'"+register+"'"; var sq="'"+site+"'";
+  var isTrip=(register==='hava'||register==='dumper');
+  var hint=isTrip
+    ?'One entry per line:\ndate, trips, payment, site\nExample: 16/06/2026, 25, 60/-, '+site
+    :'One entry per line:\ndate, party, qty, site, remark\nExample: 16/06/2026, Madan Yadav, 600 cft, '+site+', 1 hiva';
+  modal('Bulk Add to '+register.toUpperCase()+' ('+site+')',
+    '<p style="font-size:12px;opacity:0.7;margin-bottom:8px">'+hint+'</p>'+
+    '<textarea id="bulkTxt" class="in" rows="8" style="width:100%;font-size:13px;font-family:monospace" '+
+    'placeholder="'+hint+'"></textarea>',
+    '<button class="btn pri" onclick="lbBulkSave('+rq+','+sq+')">Save All</button>'+
+    '<button class="btn" onclick="closeModal()">Cancel</button>',true);
+}
+function lbBulkSave(register,site){
+  var txt=document.getElementById('bulkTxt');
+  if(!txt) return;
+  var lines=txt.value.split('\n').map(function(l){return l.trim();}).filter(Boolean);
+  if(!lines.length){toast('No entries entered',true);return;}
+  if(!S.lb) S.lb={}; if(!S.lb[register]) S.lb[register]=[];
+  var isTrip=(register==='hava'||register==='dumper');
+  var added=0;
+  lines.forEach(function(line){
+    var parts=line.split(',').map(function(p){return p.trim();});
+    if(!parts[0]) return;
+    var entry;
+    if(isTrip){
+      entry={date:parts[0]||'',trips:+(parts[1]||0),payment:parts[2]||'',site:parts[3]||site};
+    } else {
+      entry={date:parts[0]||'',party:parts[1]||'',qty:parts[2]||'600 cft',site:parts[3]||site,remark:parts[4]||''};
+    }
+    S.lb[register].push(entry);
+    added++;
+  });
+  save(); closeModal(); render();
+  toast('✅ Added '+added+' entr'+(added===1?'y':'ies'));
+}
+function lbAddRowSite(register,site){
+  try{
+    if(!S.lb) S.lb={};
+    if(!S.lb[register]) S.lb[register]=[];
+    var templates={
+      gitti:{date:'',party:'',qty:'600 cft',site:site,remark:''},
+      msand:{date:'',party:'',qty:'600 cft',site:site,remark:''},
+      hava:{date:'',trips:0,payment:'',site:site},
+      dumper:{date:'',trips:0,payment:'',site:site},
+      murum:{date:'',qty:0,remark:''}
+    };
+    var newRow=Object.assign({},templates[register]||{date:'',site:site});
+    S.lb[register].push(newRow);
+    save(); render();
+    toast('Row added — click Date to edit');
+    setTimeout(function(){
+      var tbodies=document.querySelectorAll('tbody');
+      for(var i=tbodies.length-1;i>=0;i--){
+        var rows=tbodies[i].querySelectorAll('tr');
+        if(rows.length){
+          var c=rows[rows.length-1].querySelector('span[contenteditable]');
+          if(c){c.focus();break;}
+        }
+      }
+    },150);
+  } catch(e){ toast('Error adding row: '+e.message,true); }
+}
+function lbAiAddSite(register,site){
+  var promptEl=document.getElementById('lb-ai-prompt-'+register+'-'+site);
+  var imgEl=document.getElementById('lb-ai-img-'+register+'-'+site);
+  var btn=document.getElementById('lb-ai-btn-'+register+'-'+site);
+  var prompt=promptEl?promptEl.value.trim():'';
+  if(!imgEl||!imgEl.files||!imgEl.files[0]){
+    if(!prompt){toast('Type a description or upload a photo first',true);return;}
+  }
+  if(btn){btn.disabled=true;btn.textContent='Reading...';}
+  var isTrip=(register==='hava'||register==='dumper');
+  var isMurum=(register==='murum');
+  var schema=isTrip
+    ?'JSON array: [{date,trips,payment,site}] — site is "Bypass" or "Barela"'
+    :isMurum
+    ?'JSON array: [{date,qty,remark}] — qty is number of trips/CUM'
+    :'JSON array: [{date,party,qty,site,remark}] — site is "Bypass" or "Barela", qty like "600 cft"';
+
+  function processAIResponse(text){
+    var clean=text.replace(/```json|```/g,'').trim();
+    var match=clean.match(/\[[\s\S]*\]/);
+    if(!match) throw new Error('No data found in response');
+    var arr=JSON.parse(match[0]);
+    if(!Array.isArray(arr)||!arr.length) throw new Error('No entries found');
+    if(!S.lb) S.lb={};
+    if(!S.lb[register]) S.lb[register]=[];
+    var added=0;
+    arr.forEach(function(item){
+      item.date=toISO(item.date)||item.date;
+      if(!item.site) item.site=site;
+      // Normalize site to match section
+      if(site==='Bypass') item.site='Bypass';
+      if(site==='Barela') item.site='Barela';
+      S.lb[register].push(item);
+      added++;
+    });
+    save(); render();
+    toast('✅ '+added+' entr'+(added>1?'ies':'y')+' added to '+register.toUpperCase()+' logbook');
+    if(promptEl) promptEl.value='';
+    if(imgEl) imgEl.value='';
+  }
+
+  // Use the same API endpoint as AI Record Scanner
+  function callAPI(messages){
+    fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:2000,
+        system:'You are a construction site register reader. Extract data exactly as shown in the register. Return ONLY valid JSON array, no explanation.',
+        messages:messages})
+    })
+    .then(function(r){
+      if(!r.ok) throw new Error('API error '+r.status);
+      return r.json();
+    })
+    .then(function(d){
+      var text=(d.content||[]).map(function(c){return c.text||'';}).join('');
+      processAIResponse(text);
+    })
+    .catch(function(e){
+      // Fallback: try via aiScanDocument if direct fetch fails
+      toast('Direct API failed, trying scanner...', true);
+      if(imgEl&&imgEl.files&&imgEl.files[0]){
+        AIS.file=imgEl.files[0];
+        AIS.lbDraft={target:'lb_'+register, items:[], title:register, sm:{site:{name:site}}};
+        aiRunScan();
+      } else {
+        toast('AI error: '+e.message+'. Try using AI Record Scanner page instead.',true);
+      }
+    })
+    .finally(function(){
+      if(btn){btn.disabled=false;btn.textContent='✨ AI Add';}
+    });
+  }
+
+  if(imgEl&&imgEl.files&&imgEl.files[0]){
+    var reader=new FileReader();
+    reader.onload=function(ev){
+      var b64=ev.target.result.split(',')[1];
+      var mt=imgEl.files[0].type||'image/jpeg';
+      callAPI([{role:'user',content:[
+        {type:'image',source:{type:'base64',media_type:mt,data:b64}},
+        {type:'text',text:'This is a construction site '+register+' register. Extract ALL date entries. Site='+site+'. Return ONLY: '+schema}
+      ]}]);
+    };
+    reader.readAsDataURL(imgEl.files[0]);
+    return;
+  }
+  callAPI([{role:'user',content:'Extract from: "'+prompt+'". Return ONLY: '+schema+'. Site='+site}]);
+}
+
+/* --- Gitti 20mm --- */
+function P_lb_gitti(){
+  if(!S.lb) S.lb={};
+  if(!S.lb.gitti) S.lb.gitti=[];
+  S.lb.gitti.sort(function(a,b){return (toISO(a.date)||a.date)<(toISO(b.date)||b.date)?1:-1;});
+  const all=S.lb.gitti;
+  const bypassIdx=[],barelaIdx=[];
+  all.forEach((r,i)=>{ (r.site==='Barela'?barelaIdx:bypassIdx).push(i); });
+  const bypass=bypassIdx.map(i=>all[i]);
+  const barela=barelaIdx.map(i=>all[i]);
+  const qtyNum=r=>parseFloat(String(r.qty||'0').replace(/[^0-9.]/g,''))||0;
+  const gittiCFT=all.reduce((s,r)=>s+qtyNum(r),0);
+  const bpCFT=bypass.reduce((s,r)=>s+qtyNum(r),0);
+  const blCFT=barela.reduce((s,r)=>s+qtyNum(r),0);
+  let h=pageHead('Gitti 20mm ('+all.length+' entries)','Bypass (Pg 11) · '+bypass.length+' | Barela (Pg 15) · '+barela.length+' — click any cell to edit','');
+  h+=lbTiles([
+    {cls:'a',k:'Total Loads',v:all.length,n:gittiCFT.toLocaleString()+' cft'},
+    {cls:'s',k:'Bypass CFT',v:bpCFT.toLocaleString()+' cft',n:bypass.length+' loads'},
+    {cls:'g',k:'Barela CFT',v:blCFT.toLocaleString()+' cft',n:barela.length+' loads'},
+    {cls:'w',k:'Total CFT',v:gittiCFT.toLocaleString()+' cft',n:'actual from qty field'}
+  ]);
+  var gittiDups=Object.keys(lbFindDupIndices('gitti')).length;
+  if(gittiDups) h+='<div style="background:var(--crit-soft,#fff0f0);color:var(--crit,#c00);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px;display:flex;align-items:center;gap:10px">'+
+    '<b>⚠️ '+gittiDups+' duplicate'+(gittiDups>1?'s':'')+' found — highlighted in red below.</b>'+
+    '<button class="btn sm dngr" style="margin-left:auto" onclick="lbDedup(\'gitti\')">🧹 Remove All Duplicates</button></div>';
+  h+='<div class="card" style="margin-bottom:14px"><header><h3>Gitti — Bypass Side</h3><span class="sub">Page 11</span></header>';
+  h+=lbEditableTable('gitti',['Date','Party','Qty','Site','Remark'],bypass,bypassIdx);
+  h+=lbFooter('gitti','Bypass');
+  h+='</div>';
+  h+='<div class="card"><header><h3>Gitti — Barela Side</h3><span class="sub">Page 15</span></header>';
+  h+=lbEditableTable('gitti',['Date','Party','Qty','Site','Remark'],barela,barelaIdx);
+  h+=lbFooter('gitti','Barela');
+  h+='</div>';
+  return h;
+}
+
+/* --- Hava 600cft --- */
+function P_lb_hava(){
+  if(!S.lb) S.lb={};
+  if(!S.lb.hava) S.lb.hava=[];
+  S.lb.hava.sort(function(a,b){return (toISO(a.date)||a.date)<(toISO(b.date)||b.date)?1:-1;});
+  const all=S.lb.hava;
+  const bypassIdx=[],barelaIdx=[];
+  all.forEach((r,i)=>{ (r.site==='Barela'?barelaIdx:bypassIdx).push(i); });
+  const bypass=bypassIdx.map(i=>all[i]);
+  const barela=barelaIdx.map(i=>all[i]);
+  const bpTrips=bypass.reduce((a,r)=>a+(+r.trips||0),0);
+  const blTrips=barela.reduce((a,r)=>a+(+r.trips||0),0);
+  const havaTotal=bpTrips+blTrips;
+  const havaCFT=havaTotal*600;
+  let h=pageHead('Hava 600cft ('+havaTotal+' trips)','Bypass · '+bpTrips+' trips | Barela · '+blTrips+' trips — click any cell to edit','');
+  h+=lbTiles([
+    {cls:'a',k:'Total Trips',v:havaTotal,n:'All sites'},
+    {cls:'s',k:'Bypass CFT',v:(bpTrips*600).toLocaleString()+' cft',n:bpTrips+' trips'},
+    {cls:'g',k:'Barela CFT',v:(blTrips*600).toLocaleString()+' cft',n:blTrips+' trips'},
+    {cls:'w',k:'Total CFT',v:havaCFT.toLocaleString()+' cft',n:'@ 600 cft/trip'}
+  ]);
+  var havaDups=Object.keys(lbFindDupIndices('hava')).length;
+  if(havaDups) h+='<div style="background:var(--crit-soft,#fff0f0);color:var(--crit,#c00);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px;display:flex;align-items:center;gap:10px">'+
+    '<b>⚠️ '+havaDups+' duplicate'+(havaDups>1?'s':'')+' found — highlighted in red below.</b>'+
+    '<button class="btn sm dngr" style="margin-left:auto" onclick="lbDedup(\'hava\')">🧹 Remove All Duplicates</button></div>';
+  h+='<div class="card" style="margin-bottom:14px"><header><h3>Hava — Bypass Site</h3></header>';
+  h+=lbEditableTable('hava',['Date','Trips','Payment','Site'],bypass,bypassIdx);
+  h+=lbFooter('hava','Bypass');
+  h+='</div>';
+  h+='<div class="card"><header><h3>Hava — Barela Site</h3></header>';
+  h+=lbEditableTable('hava',['Date','Trips','Payment','Site'],barela,barelaIdx);
+  h+=lbFooter('hava','Barela');
+  h+='</div>';
+  return h;
+}
+
+/* --- Dumper 300cft --- */
+function P_lb_dumper(){
+  if(!S.lb) S.lb={};
+  if(!S.lb.dumper) S.lb.dumper=[];
+  S.lb.dumper.sort(function(a,b){return (toISO(a.date)||a.date)<(toISO(b.date)||b.date)?1:-1;});
+  const all=S.lb.dumper;
+  const bypassIdx=[],barelaIdx=[];
+  all.forEach((r,i)=>{ (r.site==='Barela'?barelaIdx:bypassIdx).push(i); });
+  const bypass=bypassIdx.map(i=>all[i]);
+  const barela=barelaIdx.map(i=>all[i]);
+  const bpTrips=bypass.reduce((s,r)=>s+(+r.trips||0),0);
+  const blTrips=barela.reduce((s,r)=>s+(+r.trips||0),0);
+  const dumperTotal=bpTrips+blTrips;
+  const dumperCFT=dumperTotal*300;
+  let h=pageHead('Dumper 300cft ('+dumperTotal+' trips)','Bypass · '+bpTrips+' | Barela · '+blTrips+' — click any cell to edit','');
+  h+=lbTiles([
+    {cls:'a',k:'Total Trips',v:dumperTotal,n:'All sites'},
+    {cls:'s',k:'Bypass CFT',v:(bpTrips*300).toLocaleString()+' cft',n:bpTrips+' trips'},
+    {cls:'g',k:'Barela CFT',v:(blTrips*300).toLocaleString()+' cft',n:blTrips+' trips'},
+    {cls:'w',k:'Total CFT',v:dumperCFT.toLocaleString()+' cft',n:'@ 300 cft/trip'}
+  ]);
+  var dumperDups=Object.keys(lbFindDupIndices('dumper')).length;
+  if(dumperDups) h+='<div style="background:var(--crit-soft,#fff0f0);color:var(--crit,#c00);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px;display:flex;align-items:center;gap:10px">'+
+    '<b>⚠️ '+dumperDups+' duplicate'+(dumperDups>1?'s':'')+' found — highlighted in red below.</b>'+
+    '<button class="btn sm dngr" style="margin-left:auto" onclick="lbDedup(\'dumper\')">🧹 Remove All Duplicates</button></div>';
+  h+='<div class="card" style="margin-bottom:14px"><header><h3>Dumper — Bypass Site</h3></header>';
+  h+=lbEditableTable('dumper',['Date','Trips','Payment','Site'],bypass,bypassIdx);
+  h+=lbFooter('dumper','Bypass');
+  h+='</div>';
+  h+='<div class="card"><header><h3>Dumper — Barela Site</h3></header>';
+  h+=lbEditableTable('dumper',['Date','Trips','Payment','Site'],barela,barelaIdx);
+  h+=lbFooter('dumper','Barela');
+  h+='</div>';
+  return h;
+}
+
+/* --- M-Sand --- */
+function P_lb_msand(){
+  if(!S.lb) S.lb={};
+  if(!S.lb.msand) S.lb.msand=[];
+  S.lb.msand.sort(function(a,b){return (toISO(a.date)||a.date)<(toISO(b.date)||b.date)?1:-1;});
+  const all=S.lb.msand;
+  const bypassIdx=[],barelaIdx=[];
+  all.forEach((r,i)=>{ (r.site==='Barela'?barelaIdx:bypassIdx).push(i); });
+  const bypass=bypassIdx.map(i=>all[i]);
+  const barela=barelaIdx.map(i=>all[i]);
+  const msandQty=r=>parseFloat(String(r.qty||'0').replace(/[^0-9.]/g,''))||0;
+  const msandCFT=all.reduce((s,r)=>s+msandQty(r),0);
+  const msandBpCFT=bypass.reduce((s,r)=>s+msandQty(r),0);
+  const msandBlCFT=barela.reduce((s,r)=>s+msandQty(r),0);
+  var clearBtn='<button class="btn sm dngr" onclick="if(confirm(\'Clear ALL M-Sand entries?\')){'+'S.lb.msand=[];save();render();}">&#128465; Clear All</button>';
+  let h=pageHead('M-Sand Register ('+all.length+' entries)','Bypass (Pg 8) · '+bypass.length+' entries | Barela (Pg 13) · '+barela.length+' entries — click any cell to edit',clearBtn);
+  h+=lbTiles([
+    {cls:'a',k:'Total Loads',v:all.length,n:msandCFT.toLocaleString()+' cft'},
+    {cls:'s',k:'Bypass CFT',v:msandBpCFT.toLocaleString()+' cft',n:bypass.length+' loads · Pg 8'},
+    {cls:'g',k:'Barela CFT',v:msandBlCFT.toLocaleString()+' cft',n:barela.length+' loads · Pg 13'},
+    {cls:'w',k:'Total CFT',v:msandCFT.toLocaleString()+' cft',n:'actual from qty field'}
+  ]);
+  h+='<div class="card" style="margin-bottom:14px"><header><h3>M-Sand — Bypass Side</h3><span class="sub">Page 8 · Madan Yadav + Six mm Dust</span></header>';
+  h+=lbEditableTable('msand',['Date','Party','Qty','Site','Remark'],bypass,bypassIdx);
+  h+=lbFooter('msand','Bypass');
+  h+='</div>';
+  h+='<div class="card"><header><h3>M-Sand — Barela Side</h3><span class="sub">Page 13 · Sahu Traders & Madan Yadav</span></header>';
+  h+=lbEditableTable('msand',['Date','Party','Qty','Site','Remark'],barela,barelaIdx);
+  h+=lbFooter('msand','Barela');
+  h+='</div>';
+  return h;
+}
+
 const PAGES={
  dash:P_dash, mlog:P_mlog, trips:P_trips, muster:P_muster, stock:P_stock,
  sales:P_sales, purch:P_purch,
@@ -4871,7 +6478,9 @@ const PAGES={
  m_sites:P_m_sites, m_parties:P_m_parties, m_labour:P_m_labour, m_machines:P_m_machines,
  m_items:P_m_items, m_coa:P_m_coa,
  audit:P_audit, settings:P_settings,
- aiscan:P_aiscan, wainbox:P_wainbox
+ aiscan:P_aiscan, wainbox:P_wainbox,
+ lb_murum:P_lb_murum,
+ lb_gitti:P_lb_gitti, lb_hava:P_lb_hava, lb_dumper:P_lb_dumper, lb_msand:P_lb_msand
 };
 
 /* ── Password lock ── */
@@ -4901,12 +6510,16 @@ function clearAllDataPrompt(){
   if(pwd!==APP_PWD){ toast('Wrong password — data not cleared',true); return; }
   if(!confirm('This will DELETE every entry, machine log, trip, muster, voucher and bill from this browser.\n\nThis CANNOT be undone. Are you absolutely sure?')) return;
   try{ localStorage.removeItem(KEY); }catch(e){}
-  S=seed(); save();
+  S=seed(); S.lb={gitti:[],msand:[],hava:[],dumper:[],murum:[]}; save();
   toast('All data cleared. Fresh start.');
   render();
 }
 
 function render(){
+  // Always sort machineLogs newest first before rendering
+  if(S.machineLogs&&S.machineLogs.length>1){
+    S.machineLogs.sort(function(a,b){return (toISO(a.date)||a.date)<(toISO(b.date)||b.date)?1:-1;});
+  }
   renderNav();
   $('#crumb').innerHTML=esc(TITLES[S.ui.page||'dash']||'Dashboard')+
     (S.ui.site!=='ALL'?' <em>&middot; '+esc(scode(S.ui.site))+'</em>':'');
@@ -4927,6 +6540,49 @@ function boot(){
   document.documentElement.setAttribute('data-theme',t);
   const ic=document.getElementById('themeIc'); if(ic) ic.textContent=t==='dark'?'☾':'☀';
   load();
+
+  /* Init logbook data */
+  if(!S.lb){S.lb={gitti:[],msand:[],hava:[],dumper:[],murum:[]};save();}
+  if(!S.lb.dumper) S.lb.dumper=[];
+  if(!S.lb.murum) S.lb.murum=[];
+
+  /* Seed machines if none registered */
+  if(!S.machines||S.machines.length===0){
+    S.machines=[
+      {id:'mach-rr-01',code:'RR-01',name:'Road Roller 2-1-1-म',cat:'roller',type:'Road Roller',
+       reg:'',own:'Hired',owner:'',rate:800,unit:'Machine Hour',diesel:'Company',hmOpen:3100,status:'Active'},
+      {id:'mach-jcb-01',code:'JCB-01',name:'JCB — Madam Yadav',cat:'jcb',type:'Backhoe Loader',
+       reg:'',own:'Hired',owner:'',rate:1200,unit:'Machine Hour',diesel:'Company',hmOpen:4522,status:'Active'}
+    ];
+    save();
+  } else {
+    // Ensure seeded machines have cat field even if loaded from old localStorage
+    var needSave=false;
+    S.machines.forEach(function(m){
+      if(!m.cat){
+        if(m.type==='Road Roller'||m.type==='Roller'||m.code.indexOf('RR')>=0) m.cat='roller';
+        else if(m.type==='Backhoe Loader'||m.type==='Excavator'||m.code.indexOf('JCB')>=0) m.cat='jcb';
+        needSave=true;
+      }
+    });
+    // If only roller exists and no JCB, add default JCB
+    if(!S.machines.find(function(m){return m.cat==='jcb';})){
+      S.machines.push({id:'mach-jcb-01',code:'JCB-01',name:'JCB — Madam Yadav',cat:'jcb',type:'Backhoe Loader',
+        reg:'',own:'Hired',owner:'',rate:1200,unit:'Machine Hour',diesel:'Company',hmOpen:4522,status:'Active'});
+      needSave=true;
+    }
+    if(needSave) save();
+  }
+
+  /* Seed sites if none registered */
+  if(!S.sites||S.sites.length===0){
+    S.sites=[
+      {id:'site-bypass',code:'0001',name:'Bypass Site'},
+      {id:'site-barela',code:'0002',name:'Barela Site'}
+    ];
+    save();
+  }
+
   if(!S.ui.page) S.ui.page='dash';
   updateBrandUI();
   render();
@@ -4935,3 +6591,4 @@ function boot(){
 }
 boot();
 </script>
+</html>

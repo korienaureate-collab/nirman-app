@@ -3806,8 +3806,9 @@ function P_settings(){
    '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:10px">'+
    '<div><div class="eyebrow" style="margin-bottom:4px">6-digit PIN</div>'+
    '<input id="cloudPin" class="in" type="text" maxlength="6" placeholder="123456" style="width:120px;font-size:1.1rem;font-family:monospace;letter-spacing:4px;text-align:center"></div>'+
-   '<button class="btn pri" onclick="cloudSave()">☁️ Save to Cloud</button>'+
-   '<button class="btn" onclick="cloudLoad()">📥 Load from Cloud</button>'+
+   '<button class="btn pri" onclick="cloudSave()">\u2601\uFE0F Save & Start Auto-Sync</button>'+
+   '<button class="btn" onclick="cloudLoad()">\uD83D\uDCE5 Load from Cloud</button>'+
+   '<button class="btn sm" onclick="stopAutoSync()" style="opacity:0.7">\u23F9 Stop Auto-Sync</button>'+
    '</div>'+
    '<p class="hint" style="margin-top:8px">⚠️ Same PIN on all devices. Keep it private.</p>'+
    '<div class="sep"></div>'+
@@ -3847,26 +3848,123 @@ function cloudStatus(msg,ok){
   if(!el)return;
   el.innerHTML='<div style="padding:6px 10px;border-radius:5px;font-size:12px;background:'+(ok?'var(--good-soft)':'var(--crit-soft)')+';color:'+(ok?'var(--good)':'var(--crit)')+'">'+msg+'</div>';
 }
+// Auto-sync state
+var SYNC_TIMER=null;
+var SYNC_PIN='';
+
+function syncGetBinId(pin){ return localStorage.getItem('nirman_bin_'+pin)||null; }
+function syncSetBinId(pin,id){ localStorage.setItem('nirman_bin_'+pin,id); }
+
 async function cloudSave(){
   var pin=(document.getElementById('cloudPin')||{}).value||'';
   pin=pin.trim();
   if(pin.length<4){toast('Enter a PIN (at least 4 digits)',true);return;}
-  cloudStatus('☁️ Saving...', true);
+  cloudStatus('☁\uFE0F Saving to cloud...', true);
   try{
+    var payload=JSON.stringify({pin:pin,ts:new Date().toISOString(),data:S});
+    var binId=syncGetBinId(pin);
+    var url,method;
+    if(binId){
+      url='https://api.jsonbin.io/v3/b/'+binId;
+      method='PUT';
+    } else {
+      url='https://api.jsonbin.io/v3/b';
+      method='POST';
+    }
+    var res=await fetch(url,{
+      method:method,
+      headers:{'Content-Type':'application/json','X-Bin-Name':'nirman-'+pin,'X-Bin-Private':'false'},
+      body:payload
+    });
+    var json=await res.json();
+    if(json.metadata&&json.metadata.id){
+      syncSetBinId(pin,json.metadata.id);
+    }
+    if(!res.ok) throw new Error('Save failed: '+res.status);
+    // Also save locally as backup
+    localStorage.setItem('cloud_nirman_'+pin,btoa(unescape(encodeURIComponent(JSON.stringify(S)))));
+    localStorage.setItem('cloud_nirman_ts_'+pin,new Date().toISOString());
+    logAudit('C','CloudSync','—','Saved with PIN '+pin); save();
+    cloudStatus('\u2705 Saved to cloud! PIN: '+pin+' · All devices can now load this data.', true);
+    toast('\u2705 Synced to cloud — PIN '+pin);
+    // Start auto-sync
+    startAutoSync(pin);
+  }catch(e){
+    // Fallback to local save + download
     var b64=btoa(unescape(encodeURIComponent(JSON.stringify(S))));
     localStorage.setItem('cloud_nirman_'+pin,b64);
     localStorage.setItem('cloud_nirman_ts_'+pin,new Date().toISOString());
     dl('NirmanSync_PIN'+pin+'_'+today()+'.json',JSON.stringify({pin:pin,data:b64,ts:new Date().toISOString()}),'application/json');
-    logAudit('C','CloudSync','—','Saved with PIN '+pin); save();
-    cloudStatus('✅ Saved! PIN: '+pin+' · Sync file also downloaded.', true);
-    toast('✅ Cloud saved with PIN '+pin);
-  }catch(e){cloudStatus('❌ '+e.message,false);toast('Error: '+e.message,true);}
+    cloudStatus('\u26A0 Cloud unavailable — saved locally & downloaded file. Share that file across devices.', true);
+    toast('Saved locally (cloud unavailable)');
+  }
+}
+
+function startAutoSync(pin){
+  if(SYNC_TIMER) clearInterval(SYNC_TIMER);
+  SYNC_PIN=pin;
+  localStorage.setItem('nirman_auto_sync_pin',pin);
+  SYNC_TIMER=setInterval(function(){
+    autoSyncSave();
+  }, 2*60*1000); // every 2 minutes
+  cloudStatus('\u2705 Auto-sync ON every 2 min — PIN '+pin, true);
+}
+
+function stopAutoSync(){
+  if(SYNC_TIMER){clearInterval(SYNC_TIMER);SYNC_TIMER=null;}
+  SYNC_PIN='';
+  localStorage.removeItem('nirman_auto_sync_pin');
+  cloudStatus('Auto-sync stopped.',true);
+  toast('Auto-sync stopped');
+}
+
+async function autoSyncSave(){
+  if(!SYNC_PIN) return;
+  try{
+    var payload=JSON.stringify({pin:SYNC_PIN,ts:new Date().toISOString(),data:S});
+    var binId=syncGetBinId(SYNC_PIN);
+    if(!binId) return;
+    await fetch('https://api.jsonbin.io/v3/b/'+binId,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:payload
+    });
+    localStorage.setItem('cloud_nirman_ts_'+SYNC_PIN,new Date().toISOString());
+    console.log('Auto-synced at',new Date().toLocaleTimeString());
+  }catch(e){ console.log('Auto-sync failed:',e.message); }
 }
 async function cloudLoad(){
   var pin=(document.getElementById('cloudPin')||{}).value||'';
   pin=pin.trim();
   if(pin.length<4){toast('Enter your PIN first',true);return;}
-  cloudStatus('🔍 Looking for data...', true);
+  cloudStatus('\uD83D\uDD0D Loading from cloud...', true);
+  // Try real cloud first
+  var binId=syncGetBinId(pin);
+  if(binId){
+    try{
+      var res=await fetch('https://api.jsonbin.io/v3/b/'+binId+'/latest');
+      if(res.ok){
+        var json=await res.json();
+        var cloudData=json.record&&json.record.data;
+        if(cloudData&&cloudData.company){
+          if(!confirm('Found cloud data saved on '+(json.record.ts||'unknown')+'. Load it? Current data will be replaced.'))
+            {cloudStatus('Cancelled.',true);return;}
+          var j=cloudData;
+          if(!j.lb) j.lb={};
+          ['murum','gitti','msand','hava','dumper'].forEach(function(k){ if(!j.lb[k]) j.lb[k]=[]; });
+          S=j;
+          var _lbE=['msand','gitti','hava','dumper','murum'].every(function(k){return !S.lb[k]||!S.lb[k].length;});
+          if(_lbE) migrateTripsToLb();
+          logAudit('C','CloudSync','—','Loaded from cloud PIN '+pin); save(); render();
+          cloudStatus('\u2705 Loaded from cloud — PIN '+pin, true);
+          toast('\u2705 Cloud data loaded! Starting auto-sync...');
+          startAutoSync(pin);
+          return;
+        }
+      }
+    }catch(e){ console.log('Cloud load failed, trying local:',e.message); }
+  }
+  // Fallback to local
   try{
     var b64=localStorage.getItem('cloud_nirman_'+pin);
     var ts=localStorage.getItem('cloud_nirman_ts_'+pin);
@@ -6587,6 +6685,9 @@ function boot(){
   updateBrandUI();
   render();
   waStartPolling();
+  // Resume auto-sync if PIN was previously saved
+  var _savedPin=localStorage.getItem('nirman_auto_sync_pin');
+  if(_savedPin){ SYNC_PIN=_savedPin; startAutoSync(_savedPin); }
   showLock();
 }
 boot();

@@ -1,20 +1,14 @@
 /* ============================================================
-   Nirman Ledger — Private Cross-Device Sync (Supabase, encrypted)
+   Nirman Ledger — Private Cross-Device Sync v2 (Supabase, encrypted)
    ------------------------------------------------------------
-   Loaded automatically by the app when cloud-config.js defines
-   window.NL_CLOUD_CONFIG.
-
-   How it works
-   - Your books are encrypted in THIS browser (AES-256-GCM, key derived
-     from your PIN with PBKDF2, 200,000 rounds) BEFORE anything leaves
-     the device. The server only ever stores unreadable ciphertext.
-   - The row id is a SHA-256 hash of your PIN, so the raw PIN is never
-     stored on the server either.
-   - Same PIN on every device -> each device pulls the newest copy and
-     pushes your changes a few seconds after you make them.
-   - Last saved wins: avoid editing on two devices offline at the same
-     time. Keep the PIN safe — without it the cloud data cannot be
-     decrypted by anyone (there is no recovery backdoor).
+   - Books are encrypted in THIS browser (AES-256-GCM, key derived
+     from your PIN with PBKDF2, 200k rounds) BEFORE leaving the device.
+   - Row id = SHA-256 of the PIN; the PIN itself is never stored.
+   - Same PIN on every device; devices pull the newest copy and push
+     changes a few seconds after you make them.
+   - v2 fixes: reads the app state through the app's real storage
+     (kapl_nirman_v1) and its real S binding; skips re-uploading
+     data that was just downloaded (no sync loops); shows v2 marker.
    ============================================================ */
 (function () {
   'use strict';
@@ -23,6 +17,7 @@
   var BASE = String(CFG.url || '').replace(/\/+$/, '');
   var ANON = String(CFG.anon_key || '');
   var TABLE = String(CFG.table || 'nirman_sync');
+  var APP_KEY = 'kapl_nirman_v1';          /* the app's own localStorage key */
   var LS_PIN = 'nl_sync_pin';
   var LS_TS = 'nl_sync_state_ts';
 
@@ -36,6 +31,8 @@
   var pollTimer = null;
   var pulling = false;
   var uiWatchStarted = false;
+  var lastPushHash = '';    /* skip re-upload of identical data */
+  var lastApplyHash = '';   /* skip re-upload of just-downloaded data */
 
   /* ---------- tiny helpers ---------- */
   function $(id) { return document.getElementById(id); }
@@ -51,9 +48,33 @@
   }
   function stateTs() { return localStorage.getItem(LS_TS) || ''; }
   function setStateTs(t) { localStorage.setItem(LS_TS, t); }
+  function djb2(s) { var h = 5381, i; for (i = 0; i < s.length; i++) { h = ((h << 5) + h + s.charCodeAt(i)) | 0; } return String(h); }
 
   function toastSafe(m, bad) {
     try { if (typeof toast === 'function') toast(m, !!bad); } catch (e) {}
+  }
+
+  /* ---------- app state access ---------- */
+  /* The app declares `let S` (global lexical binding, NOT window.S).
+     Read order: live binding -> window.S -> the app's own localStorage. */
+  function currentState() {
+    try { if (typeof S !== 'undefined' && S && S.company) return S; } catch (e) {}
+    try { if (window.S && window.S.company) return window.S; } catch (e) {}
+    try {
+      var raw = localStorage.getItem(APP_KEY);
+      if (raw) { var j = JSON.parse(raw); if (j && j.company) return j; }
+    } catch (e) {}
+    return null;
+  }
+  /* Write the downloaded state back through the app's REAL S binding
+     (indirect eval resolves the global lexical binding; window.S is
+     only a fallback for app versions that expose it). */
+  function setCurrentState(j) {
+    window.__nlSyncData = j;
+    var ok = false;
+    try { (0, eval)('S = window.__nlSyncData'); ok = true; } catch (e) {}
+    try { window.S = j; } catch (e) {}
+    return ok;
   }
 
   /* ---------- crypto ---------- */
@@ -79,7 +100,7 @@
         { name: 'AES-GCM', iv: iv }, key,
         new TextEncoder().encode(JSON.stringify(obj)));
     }).then(function (ct) {
-      return { v: 1, salt: bytesToHex(salt), iv: bytesToHex(iv), ct: bytesToHex(new Uint8Array(ct)) };
+      return { v: 2, salt: bytesToHex(salt), iv: bytesToHex(iv), ct: bytesToHex(new Uint8Array(ct)) };
     });
   }
   function unseal(pkg, p) {
@@ -110,9 +131,15 @@
     }).then(function (rows) { return rows && rows.length ? rows[0] : null; });
   }
   function push(p) {
-    if (!window.S) throw new Error('app state not ready');
+    var st = currentState();
+    if (!st) throw new Error('no data to upload yet');
+    var json = JSON.stringify(st);
+    var h = djb2(json);
+    if (h === lastPushHash || h === lastApplyHash) {
+      return Promise.resolve();   /* nothing new — do not touch the server row */
+    }
     var now = new Date().toISOString();
-    return seal(window.S, p).then(function (payload) {
+    return seal(st, p).then(function (payload) {
       return sha256Hex(p).then(function (id) {
         return api(TABLE + '?on_conflict=pin', {
           method: 'POST',
@@ -122,24 +149,23 @@
       });
     }).then(function (r) {
       if (!r.ok) throw new Error('save failed (server ' + r.status + ')');
+      lastPushHash = h;
       setStateTs(now);
     });
   }
 
   /* ---------- apply cloud data to the app ---------- */
-  function applyState(j) {
-    if (!j || !j.company) throw new Error('data not recognised');
-    if (!j.lb) j.lb = {};
-    ['murum', 'gitti', 'msand', 'hava', 'dumper'].forEach(function (k) { if (!j.lb[k]) j.lb[k] = []; });
-    window.S = j;
+  function applyState(data) {
+    if (!data || !data.company) throw new Error('data not recognised');
+    if (!data.lb) data.lb = {};
+    ['murum', 'gitti', 'msand', 'hava', 'dumper'].forEach(function (k) { if (!data.lb[k]) data.lb[k] = []; });
+    setCurrentState(data);
+    lastApplyHash = djb2(JSON.stringify(data));
     try {
-      var lbE = ['msand', 'gitti', 'hava', 'dumper', 'murum']
-        .every(function (k) { return !window.S.lb[k] || !window.S.lb[k].length; });
-      if (lbE && typeof migrateTripsToLb === 'function') migrateTripsToLb();
-      if (typeof save === 'function') save();
+      if (typeof save === 'function') save();       /* persists to localStorage + triggers a (skipped) push */
       if (typeof render === 'function') render();
       if (typeof logAudit === 'function') logAudit('C', 'CloudSync', '—', 'Loaded from private cloud');
-    } catch (e) { console.error('applyState', e); }
+    } catch (e) { console.error('[NL sync] applyState', e); }
   }
 
   /* ---------- polling / auto sync ---------- */
@@ -149,13 +175,17 @@
     return pull(pin).then(function (row) {
       if (row && row.updated_at > stateTs()) {
         return unseal(row.payload, pin).then(function (data) {
+          var h = djb2(JSON.stringify(data));
+          var cur = currentState();
+          var same = cur && djb2(JSON.stringify(cur)) === h;
+          if (same) { setStateTs(row.updated_at); return; }  /* already have it */
           applyState(data);
           setStateTs(row.updated_at);
           toastSafe('🔄 Synced latest data from cloud');
         });
       }
     }).catch(function (e) {
-      if (!silent) console.warn('sync poll failed:', e.message);
+      if (!silent) console.warn('[NL sync] poll failed:', e.message);
     }).finally(function () { pulling = false; });
   }
   function startPolling() {
@@ -177,7 +207,7 @@
         setUI(true);
       }).catch(function (e) {
         pendingPush = false;
-        console.warn('sync push failed:', e.message);
+        console.warn('[NL sync] push failed:', e.message);
       });
     }, 4000);
   };
@@ -223,10 +253,15 @@
           msg('Wrong PIN — the existing cloud data could not be decrypted with it.', true);
         });
       } else {
+        pin = p;
+        localStorage.setItem(LS_PIN, p);
+        setUI(true);
+        if (!currentState()) {
+          msg('🟢 Auto-sync ON — will upload as soon as there is data.');
+          startPolling();
+          return null;
+        }
         return push(p).then(function () {
-          pin = p;
-          localStorage.setItem(LS_PIN, p);
-          setUI(true);
           msg('🟢 Auto-sync ON — your data is uploaded (encrypted). Use the same PIN on your other devices.');
           toastSafe('✅ Auto-sync enabled');
           startPolling();
@@ -253,7 +288,7 @@
     var box = document.createElement('div');
     box.style.cssText = 'margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)';
     box.innerHTML =
-      '<div style="font-weight:600;font-size:12.5px;margin-bottom:8px">🔒 Private auto-sync — end-to-end encrypted</div>' +
+      '<div style="font-weight:600;font-size:12.5px;margin-bottom:8px">🔒 Private auto-sync v2 — end-to-end encrypted</div>' +
       '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
       '<input id="nlSyncPin" type="password" autocomplete="off" placeholder="Sync PIN (6+ characters)" ' +
       'style="flex:1;min-width:150px;padding:7px 10px;border:1px solid var(--line-2);border-radius:6px;background:var(--surface);color:var(--ink);font-family:var(--mono);font-size:13px">' +
@@ -279,22 +314,21 @@
     }
   }
 
-  /* The app is a single-page app: the Cloud Sync section (#cloudSyncStatus)
-     is created only when the user opens Company & Backup — possibly long
-     after this module runs. Watch the DOM and inject the box the moment
-     the section appears (also covers re-renders that wipe the box). */
+  /* The app is a single-page app: #cloudSyncStatus exists only while the
+     Company & Backup page is rendered. Watch the DOM and inject the box
+     the moment the section appears (also survives re-renders). */
   function watchUI() {
     injectUI();
     if (uiWatchStarted) return;
     uiWatchStarted = true;
     var mo = new MutationObserver(function () { injectUI(); });
     mo.observe(document.body, { childList: true, subtree: true });
-    /* belt-and-braces in case MutationObserver is unavailable */
     setInterval(function () { injectUI(); }, 1500);
   }
 
   /* ---------- boot ---------- */
   function boot() {
+    console.log('[NL sync] nl-v2 loaded, configured=' + configured);
     if (!configured) {
       console.warn('[NL sync] cloud-config.js has no Supabase keys yet — sync stays off.');
       return;

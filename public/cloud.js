@@ -35,6 +35,7 @@
   var pendingPush = false;
   var pollTimer = null;
   var pulling = false;
+  var uiWatchStarted = false;
 
   /* ---------- tiny helpers ---------- */
   function $(id) { return document.getElementById(id); }
@@ -278,13 +279,27 @@
     }
   }
 
+  /* The app is a single-page app: the Cloud Sync section (#cloudSyncStatus)
+     is created only when the user opens Company & Backup — possibly long
+     after this module runs. Watch the DOM and inject the box the moment
+     the section appears (also covers re-renders that wipe the box). */
+  function watchUI() {
+    injectUI();
+    if (uiWatchStarted) return;
+    uiWatchStarted = true;
+    var mo = new MutationObserver(function () { injectUI(); });
+    mo.observe(document.body, { childList: true, subtree: true });
+    /* belt-and-braces in case MutationObserver is unavailable */
+    setInterval(function () { injectUI(); }, 1500);
+  }
+
   /* ---------- boot ---------- */
   function boot() {
     if (!configured) {
       console.warn('[NL sync] cloud-config.js has no Supabase keys yet — sync stays off.');
       return;
     }
-    injectUI();
+    watchUI();
     if (pin) {
       pull(pin).then(function (row) {
         if (row && row.updated_at > stateTs()) {

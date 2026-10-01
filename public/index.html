@@ -331,7 +331,7 @@ textarea.in{min-height:58px;resize:vertical}
   <aside id="rail">
     <div class="brand">
       <div class="mark" id="railMark">KA</div>
-      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 30-Sep 23:45</span></div>
+      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 01-Oct 15:00</span></div>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -12304,6 +12304,42 @@ function nlCloudStatus(st,msg){
     error:['☁ Sync error','var(--crit)'],connecting:['☁ Connecting…','var(--muted)']};
   var m=map[st]||map.saved; el.textContent=m[0]; el.style.color=m[1]; el.title=msg||'';
 }
+/* ---------- AI Inbox on the Render website (no Firebase): the server keeps the inbox, the books stay in this browser ----------
+   Claude (claude.ai chat → Nirman Ledger connector) sends lines to the server; this page shows them; approving adds them here. */
+var SRVIB={on:false,configured:false,key:(function(){ try{ return localStorage.getItem('nl_inbox_key')||''; }catch(e){ return ''; } })(),timer:null,snapAt:0,err:''};
+async function srvIbInit(){
+  if((typeof CLOUD!=='undefined'&&CLOUD.on)||!/^https?:$/.test(location.protocol)) return;
+  try{ var r=await fetch('/api/inbox/ping',{cache:'no-store'}); if(!r.ok) return; var j=await r.json(); if(!j||!j.ok) return; SRVIB.on=true; SRVIB.configured=!!j.configured; }catch(e){ return; }
+  var b=document.getElementById('inboxBtn'); if(b) b.style.display='';
+  if(SRVIB.key) srvIbPoll(); SRVIB.timer=setInterval(srvIbPoll,60000);
+}
+async function srvIbPoll(){
+  if(!SRVIB.on||!SRVIB.key) return;
+  try{ var r=await fetch('/api/inbox',{headers:{'x-inbox-key':SRVIB.key},cache:'no-store'});
+    if(r.status===401){ SRVIB.err='The inbox key is not right — use the same password as MCP_TOKEN on Render.'; if(S.ui.page==='aiinbox') render(); return; }
+    var j=await r.json(); SRVIB.err=''; cloudInboxChanged(j.items||[]); srvIbSnapshot(false);
+  }catch(e){ SRVIB.err='Cannot reach the website server right now.'; }
+}
+/* recent registers go to the server so Claude can see what is already in the books (avoids duplicates) */
+function srvIbSnapshot(force){
+  if(!SRVIB.on||!SRVIB.key||(!force&&Date.now()-SRVIB.snapAt<10*60000)) return; SRVIB.snapAt=Date.now();
+  var from=new Date(Date.now()-120*864e5).toISOString().slice(0,10), recent=function(arr){ return (arr||[]).filter(function(r){ return r&&(toISO(r.date)||String(r.date||''))>=from; }).slice(0,1500); };
+  var items={}; Object.keys(S.lb||{}).forEach(function(k){ if(Array.isArray(S.lb[k])&&k!=='bills') items['lb.'+k]=recent(S.lb[k]); });
+  items.machineLogs=recent(S.machineLogs); items.trips=recent(S.trips);
+  items.purchases=recent((S.purchases||[]).map(function(b){ return {date:b.date,no:b.no,party:(P(b.party)||{}).name,ref:b.vendorRef,amount:b.gross,paid:b.paid}; }));
+  fetch('/api/snapshot',{method:'POST',headers:{'content-type':'application/json','x-inbox-key':SRVIB.key},body:JSON.stringify({items:items})}).catch(function(){});
+}
+function srvIbSetKey(){
+  var v=((document.getElementById('ibKey')||{}).value||'').trim(); if(!v){ toast('Type the inbox key',true); return; }
+  SRVIB.key=v; try{ localStorage.setItem('nl_inbox_key',v); }catch(e){} SRVIB.err='';
+  srvIbPoll().then(function(){ if(!SRVIB.err) srvIbSnapshot(true); render(); toast(SRVIB.err?SRVIB.err:'✅ Inbox connected',!!SRVIB.err); });
+}
+function ibUpdate(id,patch){
+  if(typeof CLOUD!=='undefined'&&CLOUD.on&&CLOUD.adapter) return CLOUD.adapter.inboxUpdate(id,patch);
+  if(SRVIB.on&&SRVIB.key) return fetch('/api/inbox/'+encodeURIComponent(id),{method:'POST',headers:{'content-type':'application/json','x-inbox-key':SRVIB.key},body:JSON.stringify(patch)})
+    .then(function(r){ srvIbPoll(); return r; });
+  return Promise.resolve();
+}
 /* ---------- AI Inbox (cloud) ---------- */
 function cloudInboxChanged(list){
   CLOUD.inbox=list||[];
@@ -12318,7 +12354,11 @@ function P_aiinbox(){
   var cnt=function(s){return list.filter(function(x){return x.status===s;}).length;};
   var h=pageHead('AI Inbox','Everything Claude read — from the “Add Update” button or from your Claude chat. Nothing reaches the books until you approve it.',
     CLOUD.on?'<button class="btn pri" onclick="aiAddUpdateOpen()">+ Add Update</button>':'');
-  if(!CLOUD.on){ return h+'<div class="card"><div class="body"><p>The AI Inbox works on the live site (nirman.korienaureate.online). In this offline copy use <b>✨ Add from Claude</b>.</p></div></div>'; }
+  if(!CLOUD.on&&!SRVIB.on){ return h+'<div class="card"><div class="body"><p>The AI Inbox works on the live site (nirman.korienaureate.online). In this offline copy use <b>✨ Add from Claude</b>.</p></div></div>'; }
+  if(!CLOUD.on&&!SRVIB.configured) return h+'<div class="card"><div class="body"><p>The Claude connector is not switched on yet: on Render, add the environment variable <b>MCP_TOKEN</b> (see the setup steps), then reload this page.</p></div></div>';
+  if(!CLOUD.on&&(!SRVIB.key||SRVIB.err)) return h+'<div class="card"><div class="body"><p><b>Connect the inbox once on this computer.</b> Type the same password you set as <code>MCP_TOKEN</code> on Render. It is saved only in this browser.</p>'+
+    (SRVIB.err?'<p style="color:var(--crit)">'+esc(SRVIB.err)+'</p>':'')+
+    '<div style="display:flex;gap:8px;max-width:520px"><input id="ibKey" class="in" type="password" style="flex:1;font-family:var(--mono)" placeholder="MCP_TOKEN"><button class="btn pri" onclick="srvIbSetKey()">Connect</button></div></div></div>';
   h+='<div class="tabs">'+[['PENDING_REVIEW','To review'],['APPROVED','Approved'],['REJECTED','Rejected']].map(function(t){
     return '<button class="tab'+(tab===t[0]?' on':'')+'" onclick="S.ui.ibTab=\''+t[0]+'\';render()">'+t[1]+' ('+cnt(t[0])+')</button>'; }).join('')+'</div>';
   var rows=list.filter(function(x){return x.status===tab;});
@@ -12352,12 +12392,12 @@ function aiInboxReview(id){
 }
 function aiInboxReject(id){
   var why=prompt('Reject this item? Optional reason:',''); if(why===null) return;
-  CLOUD.adapter.inboxUpdate(id,{status:'REJECTED',decidedBy:(CLOUD.user||{}).email||'',decidedAt:new Date().toISOString(),reason:why})
+  ibUpdate(id,{status:'REJECTED',decidedBy:(CLOUD.user||{}).email||USER(),decidedAt:new Date().toISOString(),reason:why})
     .then(function(){ toast('Rejected'); });
 }
 function aiInboxApproved(id,summary){
-  if(!id||!CLOUD.adapter) return;
-  CLOUD.adapter.inboxUpdate(id,{status:'APPROVED',decidedBy:(CLOUD.user||{}).email||'',decidedAt:new Date().toISOString(),applied:summary||''});
+  if(!id) return;
+  ibUpdate(id,{status:'APPROVED',decidedBy:(CLOUD.user||{}).email||USER(),decidedAt:new Date().toISOString(),applied:summary||''});
 }
 /* ---------- Add Update: text + photos/PDF → Claude (server) → inbox → review ---------- */
 function aiAddUpdateOpen(){
@@ -12488,6 +12528,7 @@ function boot(){
   const ic=document.getElementById('themeIc'); if(ic) ic.textContent=t==='dark'?'☾':'☀';
   load();
   setTimeout(backupReminder,1500);
+  setTimeout(srvIbInit,1200);
 
   /* ── Auto-clean: remove bad LB- entries & zero impossible CFT values ── */
   if(S.trips && S.trips.length){

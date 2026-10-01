@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nirman Ledger</title>
-<script src="cloud-config.js?v=2" onerror="void 0"></script>
+<script src="cloud-config.js?v=3" onerror="void 0"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans+Devanagari:wght@400;500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
@@ -331,7 +331,7 @@ textarea.in{min-height:58px;resize:vertical}
   <aside id="rail">
     <div class="brand">
       <div class="mark" id="railMark">KA</div>
-      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 01-Oct 15:00</span></div>
+      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 01-Oct 16:45</span></div>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -12605,7 +12605,7 @@ function boot(){
   render();
   waStartPolling();
   // Resume auto-sync if PIN was previously saved
-  if(window.NL_CLOUD_CONFIG){
+  if(window.NL_CLOUD_CONFIG&&window.NL_CLOUD_CONFIG.firebase){   /* only the Firebase set-up has its own login; other sync add-ons (e.g. Supabase) keep the app's lock */
     /* live site: Firebase login replaces the local password lock; cloud.js takes over syncing */
     CLOUD.on=true; nlCloudStatus('connecting');
     var _ls=document.getElementById('lockScreen'); if(_ls) _ls.style.display='none';
@@ -13033,7 +13033,7 @@ function backupExcel(){
   }
 }
 </script>
-<script>if(window.NL_CLOUD_CONFIG){ var _cs=document.createElement('script'); _cs.type='module'; _cs.src='cloud.js?v=2'; document.body.appendChild(_cs); }</script>
+<script>if(window.NL_CLOUD_CONFIG){ var _cs=document.createElement('script'); _cs.type='module'; _cs.src='cloud.js?v=3'; document.body.appendChild(_cs); }</script>
 
 </body>
 </html>

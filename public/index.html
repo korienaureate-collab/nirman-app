@@ -331,7 +331,7 @@ textarea.in{min-height:58px;resize:vertical}
   <aside id="rail">
     <div class="brand">
       <div class="mark" id="railMark">KA</div>
-      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 02-Oct 15:50</span></div>
+      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 02-Oct 18:45</span></div>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -1715,11 +1715,15 @@ function siteCost(){
   /* work after a supplier's account (not billed yet) — all still to pay */
   afterBillWork().forEach(function(x){ put(x.item,x.site,x.amt,x.amt); });
   /* logbook costs not in the accounts yet: only what is still unpaid (their Cash Book payments are already expenses above) */
-  var P=dueAll(); Object.keys(P).forEach(function(k){ var p=P[k]; if(p.byBill||!(p.due>0.5)) return;
+  var P=dueAll(); Object.keys(P).forEach(function(k){ var p=P[k];
+    if(p.byBill){ var ps={Bypass:0,Barela:0};   /* bill supplier: bills are in the vouchers above; add only their Pending goods that have no bill */
+      ((S.lb&&S.lb.incoming)||[]).forEach(function(r){ if(/paid/i.test(r.status||'')||r.billId||r.bill||r._linkedBill||r.transfer) return; var kk=dueKey(r.party); kk=DUE_ALIAS[kk]||kk; if(kk!==k) return; var c=+r.amt||0; if(c>0) ps[r.site==='Barela'?'Barela':'Bypass']+=c; });
+      ['Bypass','Barela'].forEach(function(st){ if(ps[st]) put('Goods — '+p.name+' (pending, no bill yet)',st,ps[st],ps[st]); }); return; }
+    if(!(p.due>0.5)) return;
     var bySite={Bypass:0,Barela:0}, tot=0;
     DUE_REGS.concat(['incoming']).forEach(function(reg){ ((S.lb&&S.lb[reg])||[]).forEach(function(r){ if(dueKey(reg==='incoming'?r.party:duePartyName(r,reg))!==k) return;
       if(reg==='incoming'&&(/paid/i.test(r.status||'')||r.billId||r.bill)) return; var c=reg==='incoming'?(+r.amt||0):(lbRowCost(reg,r)||0); if(c>0){ bySite[r.site==='Barela'?'Barela':'Bypass']+=c; tot+=c; } }); });
-    var label=Object.keys(p.parts).map(function(x){ return DUE_LABEL[x]||x; }).join(', ').replace('Incoming goods (pending)','Trees / goods')+' — '+p.name+' (not in accounts yet)';
+    var label=Object.keys(p.parts).map(function(x){ return DUE_LABEL[x]||x; }).join(', ').replace('Incoming goods (pending)','Goods')+' — '+p.name+' (not in accounts yet)';
     ['Bypass','Barela'].forEach(function(st){ if(bySite[st]) put(label,st,p.due*bySite[st]/tot,p.due*bySite[st]/tot); });
   });
   var list=Object.keys(rows).map(function(k){ var r=rows[k]; ['Bypass','Barela'].forEach(function(st){ r[st].cost=R2(r[st].cost); r[st].due=R2(r[st].due); });
@@ -8958,9 +8962,11 @@ function P_lb_incoming(){
   if(!S.lb) S.lb={}; if(!S.lb.incoming) S.lb.incoming=[];
   S.lb.incoming.sort(function(a,b){return (toISO(a.date)||a.date)<(toISO(b.date)||b.date)?1:-1;});
   var all=S.lb.incoming;
-  /* Amount = Qty × Rate — but a typed Amount without a Rate is KEPT (rate is worked out from it) */
+  /* Amount = Qty × Rate only when no amount is written yet. A written amount is NEVER recalculated on opening the page:
+     a rounded rate (₹8.70) × qty used to turn ₹20,350 into ₹20,358, and a lot total ₹1,30,000 into 36 × ₹3,611.11.
+     Typing a new Rate or Qty in the table still recalculates the amount (lbEditRowLight). */
   all.forEach(function(r){ var q=+(r.qty||0),rt=+(r.rate||0),a=+(r.amt||0);
-    if(q>0&&rt!==0) r.amt=R2(q*rt); else if(a!==0){ if(q>0&&!rt) r.rate=R2(a/q); r.amt=R2(a); } else r.amt=0; }); /* a minus rate/amount ("less on bill", discount) is kept */
+    if(!a&&q>0&&rt!==0) r.amt=R2(q*rt); else r.amt=R2(a); }); /* a minus rate/amount ("less on bill", discount) is kept */
   if(S.ui.incNoPrice) return P_lb_incoming_noprice(all);
   var _np=all.filter(incNoPrice).length, _rp=all.filter(function(r){return incNoPrice(r)&&incRemarkPrice(r);}).length;
   var total=all.reduce(function(s,r){return s+(+r.amt||0);},0);
@@ -9034,7 +9040,7 @@ var CASH_RULES=[['dharmender dubey','5401'],['dharmendar dubey','5401'],['vakil'
   ['vishal yadav','5301'],['hemraj','5301'],['irfan','5301'],['golu','5301'],['welding','5301'],['dhruv','5301'],['carpenter','5301'],['pappu','5301'],['narendra','5301'],['contractor','5301'],['neeraj','5303'],['basu','5103']];
 function cashRowText(r){ return ((r.party||'')+' '+(r.remark||'')).toLowerCase(); }
 function cashFindParty(r){
-  var n=String(r.party||'').toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim(); if(n.length<3) return null;
+  var n=String(r.payTo||r.party||'').toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim(); if(n.length<3) return null;
   return (S.parties||[]).find(function(p){ var q=String(p.name||'').toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
     return q&&(q===n||(n.length>=5&&q.indexOf(n)===0)||(q.length>=5&&n.indexOf(q)===0)); })||null;
 }
@@ -9059,7 +9065,7 @@ function cashLinesFor(r,skipVch){
     var ac=p.ac||'2101';
     (S.purchases||[]).filter(function(b){return b.party===p.id&&R2((+b.net||0)-(+b.paid||0))>0.5;}).sort(function(a,b){return a.date<b.date?-1:1;}).forEach(function(b){
       if(left<=0) return; var due=R2((+b.net||0)-(+b.paid||0)), x=R2(Math.min(due,left)); lines.push({ac:ac,dr:x,cr:0,note:b.no}); left=R2(left-x); });
-    if(left>0&&(lines.length||/creditor|supplier|vendor/i.test(p.type||''))){ lines.push({ac:ac,dr:left,cr:0,note:'Advance — '+p.name}); left=0; }
+    if(left>0&&!r.payTo&&(lines.length||/creditor|supplier|vendor/i.test(p.type||''))){ lines.push({ac:ac,dr:left,cr:0,note:'Advance — '+p.name}); left=0; }   /* with payTo the rest stays the payee's own work */
   }
   if(left>0) lines.push({ac:cashHeadFor(r),dr:left,cr:0,note:r.party||''});
   lines.push({ac:cash?'1102':'1103',dr:0,cr:amt,note:cash?'Cash':(r.mode||'Bank')});
@@ -9499,8 +9505,8 @@ function lbEditRowLight(el){
         // Rate or qty changed → recalculate amt
         if(r.qty&&r.rate) r.amt=R2(r.qty*r.rate); /* rate may be minus for a discount row */
       } else if(col==='amt'){
-        // Amt typed manually → back-calculate rate if qty known
-        if(r.qty>0&&r.amt) r.rate=R2(r.amt/r.qty);
+        // Amt typed manually → work out a rate only when none is written and it divides cleanly (never for a lot total)
+        if(r.qty>0&&r.amt&&!r.rate&&!r.lot&&Math.abs(R2(r.amt/r.qty)*r.qty-r.amt)<0.005) r.rate=R2(r.amt/r.qty);
       }
     }
     if(reg==='diesel'&&(col==='rate'||col==='qty')){ var _l=lbNum(r.qty), _x=lbNum(r.rate); if(_l) r.litres=_l; if(_l&&_x) r.amount=R2(_l*_x); }
@@ -10329,9 +10335,9 @@ function dueAll(){
     var nt=String(l.note).toLowerCase(); Object.keys(P).forEach(function(k){ var p=P[k]; if(p.byBill&&p.name&&nt.indexOf(String(p.name).toLowerCase())>=0){ p.paid+=+l.dr; p.adv=(p.adv||0)+(+l.dr); } }); }); });
   DUE_REGS.forEach(function(reg){ ((S.lb&&S.lb[reg])||[]).forEach(function(r){ var p=get(duePartyName(r,reg)); if(!p||p.byBill) return;
     var c=lbRowCost(reg,r); if(c===null){ p.noPrice++; return; } if(!c) return; p.cost+=c; p.parts[reg]=(p.parts[reg]||0)+c; }); });
-  ((S.lb&&S.lb.incoming)||[]).forEach(function(r){ if(/paid/i.test(r.status||'')||r.transfer||r.lot||r.billId||r.bill||r._linkedBill) return; var p=get(r.party); if(!p) return;
+  ((S.lb&&S.lb.incoming)||[]).forEach(function(r){ if(/paid/i.test(r.status||'')||r.transfer||(r.lot&&!(+r.amt))||r.billId||r.bill||r._linkedBill) return; var p=get(r.party); if(!p) return;   /* a lot counts once, on the row that carries its total */
     var c=+r.amt||0; if(!c){ p.noPrice++; return; } p.cost+=c; p.parts.incoming=(p.parts.incoming||0)+c; });
-  ((S.lb&&S.lb.cash)||[]).forEach(function(r){ if(!/paid/i.test(r.status||'')) return; var k=dueKey(r.party); var p=P[DUE_ALIAS[k]||k]; if(!p||p.byBill) return; p.paid+=+r.amt||0; p.payRows++; });
+  ((S.lb&&S.lb.cash)||[]).forEach(function(r){ if(!/paid/i.test(r.status||'')) return; var k=dueKey(r.payTo||r.party); var p=P[DUE_ALIAS[k]||k]; if(!p||p.byBill) return; p.paid+=+r.amt||0; p.payRows++; });
   Object.keys(P).forEach(function(k){ var p=P[k]; p.cost=R2(p.cost); p.paid=R2(p.paid); p.due=R2(p.cost-p.paid); if(!p.cost&&!p.noPrice) delete P[k]; });
   return P;
 }

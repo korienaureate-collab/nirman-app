@@ -331,7 +331,7 @@ textarea.in{min-height:58px;resize:vertical}
   <aside id="rail">
     <div class="brand">
       <div class="mark" id="railMark">KA</div>
-      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 02-Oct 19:15</span></div>
+      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 02-Oct 19:40</span></div>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -11316,7 +11316,7 @@ function dcRun(){
       why:'Its bill '+(r.bill||'')+' was deleted. The goods row itself is kept.',ev:{cols:['Date','Item','Qty','Amount','Bill'],rows:[[dmy(r.date),r.item,r.qty,fmtC(r.amt),r.bill||'']]},
       acts:[{l:'Remove the broken link',pri:1,fn:function(){ delete r.billId; delete r.bill; logAudit('U','Incoming',r.item,'Broken bill link removed'); save(); render(); }}]}); });
   /* "x70/-", "@85", "×12" in the remark mean per piece/kg — those are right; only a bare "495/-" is unclear */
-  var rt=INC.filter(function(r){ var v=incRemarkPrice(r), q=+r.qty||0; if(r.billId||r.bill||/(^|[\s(])[x×@*]\s*[\d₹]|per\s|each|प्रति|\/\s*(kg|no|nos|pc|pcs|mtr|m|ltr|bag|roll)\b/i.test(String(r.remark||''))) return false;
+  var rt=INC.filter(function(r){ var v=incRemarkPrice(r), q=+r.qty||0; if(r.billId||r.bill||r.est||/(^|[\s(])[x×@*]\s*[\d₹]|per\s|each|प्रति|\/\s*(kg|no|nos|pc|pcs|mtr|m|ltr|bag|roll)\b/i.test(String(r.remark||''))) return false;
     return v>0&&q>1&&Math.abs((+r.amt||0)-q*v)<=1&&Math.abs((+r.amt||0)-v)>1; });
   if(rt.length) add({key:'dc-inctotal|'+rt.map(function(r){return r.date+r.item;}).join(',').slice(0,160),sev:'check',area:'Incoming Goods',
     title:rt.length+' Incoming Goods rows: is the price in the remark for the whole lot or for one piece?',

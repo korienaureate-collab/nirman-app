@@ -331,7 +331,7 @@ textarea.in{min-height:58px;resize:vertical}
   <aside id="rail">
     <div class="brand">
       <div class="mark" id="railMark">KA</div>
-      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 02-Oct 19:00</span></div>
+      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 02-Oct 19:15</span></div>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -8977,7 +8977,7 @@ function P_lb_incoming(){
     '<button class="btn sm" onclick="lbDedup(\'incoming\')">\ud83e\uddf9 Dedup</button>'+lbUndoBtn('incoming')+
     '<button class="btn pri" onclick="lbIncomingQuick()">+ Item (Qty \u00d7 Rate)</button>'+
     '<button class="btn sm gh" onclick="lbSetAllIncoming(\'Paid\')">✓ Mark All Paid</button>'+
-    '<button class="btn sm" onclick="lbSetAllIncoming(\'Pending\')">↩ All Pending</button>'+
+    '<button class="btn sm" onclick="lbSetAllIncoming(\'Pending\')">↩ All Pending</button>'+lbIncUndoBtn()+
     '<button class="btn sm" onclick="expIncomingCSV()">Export CSV</button>');
   h+=lbTiles([
     {cls:'a',k:'Total Items',v:all.length,n:'entries recorded'},
@@ -8985,8 +8985,10 @@ function P_lb_incoming(){
     {cls:'c',k:'Pending',v:fmtC(pend),n:'not yet paid'},
     {cls:'g',k:'Paid',v:fmtC(paid),n:'status = Paid'}
   ]);
+  var _nb=all.filter(function(r){return incNoPrice(r)&&r.noBill;}).length;
   if(_np) h+='<div class="warnbox" style="margin-bottom:14px;cursor:pointer" onclick="S.ui.incNoPrice=true;render();window.scrollTo(0,0)"><span>₹</span><div style="flex:1">'+
-    '<b>'+_np+' goods have no price</b> — their amount is ₹0, so the totals above are too low. <u>Click to see only these and fill the prices</u>'+
+    (_nb?'<b>'+_nb+' goods have no bill</b> — no price anywhere in the books (checked), so their cost is not counted'+(_np>_nb?' · <b>'+(_np-_nb)+' more have no price yet</b>':'')+'. <u>Click to see them</u> — type a price when you get the bill'
+        :'<b>'+_np+' goods have no price</b> — their amount is ₹0, so the totals above are too low. <u>Click to see only these and fill the prices</u>')+
     (_rp?' · '+_rp+' have the price written in the remark':'')+'.</div><button class="btn sm pri" style="margin-left:8px">Show '+_np+' →</button></div>';
   h+=lbIncomingCard('Bypass')+lbIncomingCard('Barela');
   if(!all.length) h+='<div class="card"><header><h3>No items yet</h3></header><p class="hint" style="padding:16px">Use + Item (Qty \u00d7 Rate) \u2014 fill Qty and Rate, Amount is automatic.</p></div>';
@@ -9462,22 +9464,30 @@ function showBatchImportModal(){
 }
 
 /* --- One-click status for Incoming Goods --- */
-function lbSetAllIncoming(status){
-  if(!S.lb||!S.lb.incoming||!S.lb.incoming.length){ toast('No incoming items',true); return; }
-  if(!confirm('Mark ALL '+S.lb.incoming.length+' incoming items as '+status+'?')) return;
-  S.lb.incoming.forEach(function(r){ r.status=status; });
-  S.audit.push({id:uid(),ts:new Date().toISOString(),user:USER(),op:'incoming_status_bulk',entity:'lb',ref:'incoming',detail:'all marked '+status});
-  save(); render();
-  toast('\u2705 All marked '+status);
+function lbSetAllIncoming(status){ lbIncStatusBulk(status,null); }
+/* Bulk Paid / Pending — asks first, shows what changes, keeps an undo copy.
+   "Paid" here means paid on the spot; goods without a Cash Book payment then drop out of "still to pay". */
+function lbIncStatusBulk(status,site){
+  var all=(S.lb&&S.lb.incoming)||[]; if(!all.length){ toast('No incoming items',true); return; }
+  var rows=all.filter(function(r){ return (!site||(r.site||'Bypass')===site)&&String(r.status||'')!==status&&!r.billId; });
+  if(!rows.length){ toast('Nothing to change'+(site?' at '+site:''),true); return; }
+  var amt=R2(rows.reduce(function(a,r){return a+(+r.amt||0);},0)), np=rows.filter(incNoPrice).length;
+  var msg=rows.length+' item'+(rows.length>1?'s':'')+(site?' at '+site:'')+' will change to '+status+' ('+rs(amt)+(np?', '+np+' without price':'')+').\n\n'+
+    (status==='Paid'?'Paid = paid on the spot. Goods that have no Cash Book payment will no longer show in "still to pay".\nRows linked to a bill are not changed (the bill decides).':'They will show in "still to pay" until a Cash Book payment covers them.')+'\n\nYou can undo this right after.';
+  if(!confirm(msg)) return;
+  all.forEach(function(r){ delete r._bulkPrev; });   /* each changed row keeps its old status, so undo works even after the list is re-sorted */
+  rows.forEach(function(r){ r._bulkPrev=r.status||''; r.status=status; });
+  logAudit('U','Incoming','bulk',rows.length+' items'+(site?' at '+site:'')+' marked '+status+' ('+rs(amt)+')');
+  save(); render(); toast('✅ '+rows.length+' marked '+status+' — ↩ Undo is next to the button');
 }
-function lbSetAllIncomingSite(status, site){
-  if(!S.lb||!S.lb.incoming||!S.lb.incoming.length){ toast('No items',true); return; }
-  var rows=S.lb.incoming.filter(function(r){return (r.site||'Bypass')===site;});
-  if(!rows.length){ toast('No items for '+site,true); return; }
-  rows.forEach(function(r){ r.status=status; });
-  save(); render();
-  toast('\u2705 '+rows.length+' '+site+' items marked '+status);
+function lbIncStatusUndo(){
+  var all=(S.lb&&S.lb.incoming)||[], n=0;
+  all.forEach(function(r){ if('_bulkPrev' in r){ r.status=r._bulkPrev; delete r._bulkPrev; n++; } });
+  if(!n){ toast('Nothing to undo',true); return; }
+  logAudit('U','Incoming','bulk','Undo of the last Paid / Pending change'); save(); render(); toast('↩ Status put back');
 }
+function lbIncUndoBtn(){ var has=((S.lb&&S.lb.incoming)||[]).some(function(r){ return '_bulkPrev' in r; }); return has?'<button class="btn sm" onclick="lbIncStatusUndo()">↩ Undo Paid/Pending</button>':''; }
+function lbSetAllIncomingSite(status, site){ lbIncStatusBulk(status,site); }
 function lbGuessName(rem){
   if(!rem) return '';
   var s=String(rem);

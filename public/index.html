@@ -331,7 +331,7 @@ textarea.in{min-height:58px;resize:vertical}
   <aside id="rail">
     <div class="brand">
       <div class="mark" id="railMark">KA</div>
-      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 02-Oct 15:35</span></div>
+      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 02-Oct 15:50</span></div>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -1639,6 +1639,8 @@ function dashItems(p){
       var dr=v?(v.lines||[]).filter(function(l){ return +l.dr>0&&!/^15/.test(l.ac); }):[];
       if(bills.length===1&&dr.length>1) dr.forEach(function(l){ var nm=String(l.note||accName(l.ac)).split(/\s\d|:| —| @| =/)[0].trim(); lines.push([nm||accName(l.ac),+l.dr]); });
       else lines.push([b.no+(b.vendorRef?' ('+b.vendorRef+')':''),+b.net]); });
+    if(p.after){ var ab={}; afterBillWork().forEach(function(x){ if(x.pid===p.pid) ab[x.item]=(ab[x.item]||0)+x.amt; });
+      Object.keys(ab).forEach(function(k){ lines.push([k+' — after his account, not billed yet',ab[k]]); }); }
     var g={}; lines.forEach(function(x){ g[x[0]]=(g[x[0]]||0)+x[1]; });
     return Object.keys(g).sort(function(a,b){return g[b]-g[a];}).map(function(k){ return [k,g[k]]; });
   }
@@ -1710,6 +1712,8 @@ function siteCost(){
       else put(item,site,amt,amt*unpaid);
     });
   });
+  /* work after a supplier's account (not billed yet) — all still to pay */
+  afterBillWork().forEach(function(x){ put(x.item,x.site,x.amt,x.amt); });
   /* logbook costs not in the accounts yet: only what is still unpaid (their Cash Book payments are already expenses above) */
   var P=dueAll(); Object.keys(P).forEach(function(k){ var p=P[k]; if(p.byBill||!(p.due>0.5)) return;
     var bySite={Bypass:0,Barela:0}, tot=0;
@@ -10288,7 +10292,7 @@ function lbCostTiles(reg,rows){
 var DUE_STOP={saliwada:1,aac:1,block:1,blocks:1,traders:1,trader:1,trades:1,ji:1,jbp:1,jabalpur:1,barela:1,bypass:1,gour:1,gor:1,and:1,sons:1,pvt:1,ltd:1,sales:1,the:1,enterprises:1,enterprise:1,infra:1,company:1,store:1,stores:1,shop:1,cash:1,cas:1,chack:1,paid:1,agst:1,against:1,online:1,product:1,products:1,petroleum:1,pump:1,jcb:1};
 function dueKey(name){ return String(name||'').toLowerCase().replace(/[^a-z ]/g,' ').split(/\s+/).filter(function(t,i,all){ return t.length>=3&&!DUE_STOP[t]&&all.indexOf(t)===i; }).sort().join(' '); }
 var DUE_REGS=['gitti','msand','loha','cement','adhesive','bindingwire','tmgitti','readymix','bricks','blocks','diesel'];
-var DUE_LABEL={gitti:'Gitti',msand:'M-Sand',loha:'Loha',cement:'Cement',adhesive:'Adhesive',bindingwire:'Binding wire',tmgitti:'T.M. Gitti',readymix:'Readymix',bricks:'Bricks',blocks:'AAC blocks',diesel:'Diesel',incoming:'Incoming goods (pending)',bills:'Vendor bills'};
+var DUE_LABEL={gitti:'Gitti',msand:'M-Sand',loha:'Loha',cement:'Cement',adhesive:'Adhesive',bindingwire:'Binding wire',tmgitti:'T.M. Gitti',readymix:'Readymix',bricks:'Bricks',blocks:'AAC blocks',diesel:'Diesel',incoming:'Incoming goods (pending)',bills:'Vendor bills',after:'After his account — not billed yet'};
 function duePartyName(r,reg){
   if(reg==='diesel'&&(r.vchId||/cv\/|pv\/|voucher|bill/i.test(String(r.remark||'')))) return '';   /* diesel already paid through its voucher */
   var p=String(r.party||'').trim(), k=dueKey(p);
@@ -10297,6 +10301,20 @@ function duePartyName(r,reg){
   return p;
 }
 var DUE_ALIAS={};
+/* Work done after a supplier's account was made (bill field "covers": the last date each item is billed to),
+   e.g. Madan's account counts murum to 11/9 and JCB to 31/8 — later trips and hours are still owed but not billed yet. */
+var AFTER_ITEM={murum:'Hard Murum',jcb:'JCB',roller:'Road roller'};
+function afterBillWork(){
+  var out=[];
+  (S.purchases||[]).forEach(function(b){ var cv=b.covers; if(!cv) return;
+    if(cv.murum) ((S.lb&&S.lb.murum)||[]).forEach(function(r){ var d=toISO(r.date)||r.date; if(!(d>cv.murum)) return; var c=lbRowCost('murum',r)||0;
+      if(c>0) out.push({pid:b.party,bill:b.no,kind:'murum',item:AFTER_ITEM.murum,site:(r.site==='Barela'||r.site==='site-barela')?'Barela':'Bypass',amt:c,date:d,qty:lbNum(r.qty)}); });
+    (S.machineLogs||[]).forEach(function(l){ var m=MACH(l.machine)||{}; var k=m.cat||l.mtype; if(m.owner!==b.party||!cv[k]||l.offsite||!(+l.hours>0)) return;
+      var d=toISO(l.date)||l.date; if(!(d>cv[k])) return; var c=mlogCost([l]).amt;
+      if(c>0) out.push({pid:b.party,bill:b.no,kind:k,item:AFTER_ITEM[k]||k,site:l.site==='site-barela'?'Barela':'Bypass',amt:c,date:d,qty:+l.hours}); });
+  });
+  return out;
+}
 function dueAll(){
   var P={}; DUE_ALIAS={};
   var get=function(name){ var k=dueKey(name); if(!k) return null; if(DUE_ALIAS[k]) return P[DUE_ALIAS[k]]; if(!P[k]) P[k]={key:k,name:String(name).trim(),cost:0,noPrice:0,parts:{},paid:0,payRows:0,byBill:false}; return P[k]; };
@@ -10305,6 +10323,7 @@ function dueAll(){
     if(!P[id]) P[id]={key:id,name:pt.name,cost:0,noPrice:0,parts:{},paid:0,payRows:0,byBill:true,pid:pt.id};
     var nk=dueKey(pt.name); if(nk&&!DUE_ALIAS[nk]) DUE_ALIAS[nk]=id;
     P[id].cost+=+b.net||0; P[id].paid+=+b.paid||0; P[id].parts.bills=(P[id].parts.bills||0)+(+b.net||0); });
+  afterBillWork().forEach(function(x){ var p=P['id:'+x.pid]; if(!p) return; p.cost+=x.amt; p.parts.after=(p.parts.after||0)+x.amt; p.after=(p.after||0)+x.amt; });
   /* advances paid to a bill supplier (payment line "Advance — <name>") also count as paid */
   (S.vouchers||[]).forEach(function(v){ if(!/^(PV|CV|JV)$/.test(v.type)) return; (v.lines||[]).forEach(function(l){ if(!(+l.dr>0)||!/^advance/i.test(String(l.note||''))) return;
     var nt=String(l.note).toLowerCase(); Object.keys(P).forEach(function(k){ var p=P[k]; if(p.byBill&&p.name&&nt.indexOf(String(p.name).toLowerCase())>=0){ p.paid+=+l.dr; p.adv=(p.adv||0)+(+l.dr); } }); }); });

@@ -331,7 +331,7 @@ textarea.in{min-height:58px;resize:vertical}
   <aside id="rail">
     <div class="brand">
       <div class="mark" id="railMark">KA</div>
-      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 02-Oct 14:55</span></div>
+      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 02-Oct 15:05</span></div>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -1813,6 +1813,21 @@ function P_mlog(){
    tile('s','Machines deployed',String(new Set(rows.map(r=>r.machine)).size),'of '+S.machines.length+' in the register')+
    (function(){ var c=mlogCost(rows); return tile('g','Total Cost',inr0(c.amt),c.txt); })()+
   '</div>';
+  /* ── hours run (घंटे) and cost at each site ── */
+  h+=(function(){
+    var isBl=function(l){ return l.site==='site-barela'||/barela/i.test(l.work||''); };
+    var one=function(list,name,cls){
+      var run=list.filter(function(l){ return !l.offsite&&(+l.hours>0); });
+      var hrs=R2(run.reduce(function(s,l){ return s+(+l.hours||0); },0));
+      /* a line that covers several days says so ("12 day BARELA", "11 day Bypass", "2 days") */
+      var seen={}, days=0; run.forEach(function(l){ var m=String(l.work||'').match(/(\d+)\s*days?/i);
+        if(m&&+m[1]>1){ days+=+m[1]; } else if(!seen[l.date]){ seen[l.date]=1; days++; } });
+      var c=mlogCost(run);
+      return tile(cls,name+' — hours run (घंटे)',fmtI(hrs,2)+' h',days+(mtype==='all'?' machine-day':' working day')+(days===1?'':'s')+' · '+run.length+' entries')+
+             tile(cls,name+' — cost',inr0(c.amt),c.txt||'—');
+    };
+    return '<div class="tiles" style="margin-top:12px">'+one(rows.filter(function(l){ return !isBl(l); }),'Bypass','s')+one(rows.filter(isBl),'Barela','g')+'</div>';
+  })();
   h+='<div class="warnbox noprint" style="margin-bottom:16px"><span>⚑</span><div><b>Why this register matters.</b> '+
    'A JCB invoice without a machine log, hour-meter reading and site certification is the first thing a bank auditor or GST officer '+
    'questions. Every bill raised here carries its measurement abstract, so the invoice, the log and the MB entry always agree.</div></div>';

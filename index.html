@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nirman Ledger</title>
-<script src="cloud-config.js" onerror="void 0"></script>
+<script src="cloud-config.js?v=3" onerror="void 0"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans+Devanagari:wght@400;500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
@@ -331,7 +331,7 @@ textarea.in{min-height:58px;resize:vertical}
   <aside id="rail">
     <div class="brand">
       <div class="mark" id="railMark">KA</div>
-      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 30-Sep 23:45</span></div>
+      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 02-Oct 19:00</span></div>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -1639,6 +1639,8 @@ function dashItems(p){
       var dr=v?(v.lines||[]).filter(function(l){ return +l.dr>0&&!/^15/.test(l.ac); }):[];
       if(bills.length===1&&dr.length>1) dr.forEach(function(l){ var nm=String(l.note||accName(l.ac)).split(/\s\d|:| —| @| =/)[0].trim(); lines.push([nm||accName(l.ac),+l.dr]); });
       else lines.push([b.no+(b.vendorRef?' ('+b.vendorRef+')':''),+b.net]); });
+    if(p.after){ var ab={}; afterBillWork().forEach(function(x){ if(x.pid===p.pid) ab[x.item]=(ab[x.item]||0)+x.amt; });
+      Object.keys(ab).forEach(function(k){ lines.push([k+' — after his account, not billed yet',ab[k]]); }); }
     var g={}; lines.forEach(function(x){ g[x[0]]=(g[x[0]]||0)+x[1]; });
     return Object.keys(g).sort(function(a,b){return g[b]-g[a];}).map(function(k){ return [k,g[k]]; });
   }
@@ -1659,8 +1661,27 @@ function scShare(kind){   /* {Bypass:f, Barela:f} from the registers for one of 
   else if(kind==='murum') (lb.murum||[]).forEach(function(r){ add(scSiteOfText((r.site||'')+' '+(r.remark||'')),lbRowCost('murum',r)||0); });
   else if(kind==='msand'||kind==='gitti') (lb[kind]||[]).forEach(function(r){ if(/madan/i.test(r.party||'')&&!/6\s*mm/i.test(r.remark||'')) add(r.site,lbRowCost(kind,r)||0); });
   else if(kind==='jcb'||kind==='roller') (S.machineLogs||[]).forEach(function(l){ if(l.offsite||!(+l.hours>0)) return; var m=MACH(l.machine)||{}; if((m.cat||l.mtype)!==kind||/dubey/i.test(m.name||'')) return;
-    add(l.site==='site-barela'||/barela/i.test(l.work||'')?'Barela':'Bypass', kind==='roller'?1:(+l.hours)); });
+    add(l.site==='site-barela'?'Barela':'Bypass', kind==='roller'?1:(+l.hours)); });
   var t=by.Bypass+by.Barela; return t?{Bypass:by.Bypass/t,Barela:by.Barela/t}:{Bypass:1,Barela:0};
+}
+/* Cash Book payment to a supplier → split between the sites the same way as that supplier's deliveries
+   (register rows and priced Incoming Goods), e.g. Subham Sahu's steel all went to Barela. */
+var SC_PARTY=null;
+function scPartyShares(){
+  var m={}, add=function(name,site,c){ var k=dueKey(name); k=(DUE_ALIAS&&DUE_ALIAS[k])||k; if(!k||!(c>0)) return; if(!m[k]) m[k]={Bypass:0,Barela:0}; m[k][site==='Barela'?'Barela':'Bypass']+=c; };
+  DUE_REGS.forEach(function(reg){ ((S.lb&&S.lb[reg])||[]).forEach(function(r){ add(duePartyName(r,reg)||r.party,r.site,lbRowCost(reg,r)||0); }); });
+  /* Incoming Goods: only what a Cash Book payment can be for — Pending goods and lots paid through the Cash Book.
+     Goods marked Paid on the spot are left out. A lot's total is spread over all its rows (and so over both sites). */
+  var inc=(S.lb&&S.lb.incoming)||[], lots={};
+  inc.forEach(function(r){ if(!r.lot) return; var L=lots[r.lot]||(lots[r.lot]={amt:0,n:0}); L.amt+=+r.amt||0; L.n++; });
+  inc.forEach(function(r){
+    if(r.lot){ var L=lots[r.lot]; if(L&&L.n) add(r.party,r.site,L.amt/L.n); return; }
+    if(!/paid/i.test(r.status||'')) add(r.party,r.site,+r.amt||0); });
+  return m;
+}
+function scPartyShare(name){
+  var k=dueKey(name); k=(DUE_ALIAS&&DUE_ALIAS[k])||k; var x=k&&SC_PARTY&&SC_PARTY[k]; if(!x) return null;
+  var t=x.Bypass+x.Barela; return t>0&&x.Barela>0?{Bypass:x.Bypass/t,Barela:x.Barela/t}:null;
 }
 function scKindOfNote(n){ n=String(n||'').toLowerCase();
   return /murum/.test(n)?'murum':/^jcb/.test(n)?'jcb':/roller/.test(n)?'roller':/hiva|hywa/.test(n)?'hava':/dumper/.test(n)?'dumper':/^m-?sand/.test(n)?'msand':/^gitti/.test(n)?'gitti':''; }
@@ -1670,6 +1691,7 @@ function siteCost(){
   var billOf={}; (S.purchases||[]).forEach(function(b){ if(b.vch) billOf[b.vch]=b; });
   /* an advance already given to a supplier covers their unpaid bills (oldest first) */
   var extra={}, PD=dueAll();
+  SC_PARTY=scPartyShares();
   Object.keys(PD).forEach(function(k){ var p=PD[k]; if(!p.byBill||!(p.adv>0)) return; var left=p.adv;
     (S.purchases||[]).filter(function(b){ return b.party===p.pid; }).sort(function(a,b){ return a.date<b.date?-1:1; }).forEach(function(b){
       var o=Math.max(0,(+b.net||0)-(+b.paid||0)); var x=Math.min(o,left); if(x>0){ extra[b.id]=x; left-=x; } }); });
@@ -1685,16 +1707,23 @@ function siteCost(){
         if(k) share=scShare(k); if(/bhatta/i.test(String(l.note||''))) share=scShare('roller'); }
       else if(/^(PV|CV|JV)$/.test(v.type)&&(l.ac==='5401'||l.ac==='5403')) item=SC_ITEM[l.ac];
       var site=scSiteOfText(v.narration+' '+(l.note||''),v.site==='site-barela'?'Barela':'Bypass');
+      if(!b&&!share&&!/barela/i.test(v.narration+' '+(l.note||''))&&v.site!=='site-barela') share=scPartyShare(l.note||String(v.narration||'').split(' — ')[0]);
       if(share){ ['Bypass','Barela'].forEach(function(st){ if(share[st]) put(item,st,amt*share[st],amt*share[st]*unpaid); }); }
       else put(item,site,amt,amt*unpaid);
     });
   });
+  /* work after a supplier's account (not billed yet) — all still to pay */
+  afterBillWork().forEach(function(x){ put(x.item,x.site,x.amt,x.amt); });
   /* logbook costs not in the accounts yet: only what is still unpaid (their Cash Book payments are already expenses above) */
-  var P=dueAll(); Object.keys(P).forEach(function(k){ var p=P[k]; if(p.byBill||!(p.due>0.5)) return;
+  var P=dueAll(); Object.keys(P).forEach(function(k){ var p=P[k];
+    if(p.byBill){ var ps={Bypass:0,Barela:0};   /* bill supplier: bills are in the vouchers above; add only their Pending goods that have no bill */
+      ((S.lb&&S.lb.incoming)||[]).forEach(function(r){ if(/paid/i.test(r.status||'')||r.billId||r.bill||r._linkedBill||r.transfer) return; var kk=dueKey(r.party); kk=DUE_ALIAS[kk]||kk; if(kk!==k) return; var c=+r.amt||0; if(c>0) ps[r.site==='Barela'?'Barela':'Bypass']+=c; });
+      ['Bypass','Barela'].forEach(function(st){ if(ps[st]) put('Goods — '+p.name+' (pending, no bill yet)',st,ps[st],ps[st]); }); return; }
+    if(!(p.due>0.5)) return;
     var bySite={Bypass:0,Barela:0}, tot=0;
     DUE_REGS.concat(['incoming']).forEach(function(reg){ ((S.lb&&S.lb[reg])||[]).forEach(function(r){ if(dueKey(reg==='incoming'?r.party:duePartyName(r,reg))!==k) return;
       if(reg==='incoming'&&(/paid/i.test(r.status||'')||r.billId||r.bill)) return; var c=reg==='incoming'?(+r.amt||0):(lbRowCost(reg,r)||0); if(c>0){ bySite[r.site==='Barela'?'Barela':'Bypass']+=c; tot+=c; } }); });
-    var label=Object.keys(p.parts).map(function(x){ return DUE_LABEL[x]||x; }).join(', ').replace('Incoming goods (pending)','Trees / goods')+' — '+p.name+' (not in accounts yet)';
+    var label=Object.keys(p.parts).map(function(x){ return DUE_LABEL[x]||x; }).join(', ').replace('Incoming goods (pending)','Goods')+' — '+p.name+' (not in accounts yet)';
     ['Bypass','Barela'].forEach(function(st){ if(bySite[st]) put(label,st,p.due*bySite[st]/tot,p.due*bySite[st]/tot); });
   });
   var list=Object.keys(rows).map(function(k){ var r=rows[k]; ['Bypass','Barela'].forEach(function(st){ r[st].cost=R2(r[st].cost); r[st].due=R2(r[st].due); });
@@ -1716,7 +1745,7 @@ function dashSiteCostCard(){
     '<div class="tw"><table class="t"><thead><tr><th>Item</th><th class="n">Bypass</th><th class="n">Barela</th><th class="n">Total cost</th><th class="n">Paid</th><th class="n">To pay</th></tr></thead><tbody>'+
     sc.list.map(function(r){ return '<tr><td>'+esc(r.item)+'</td>'+cell(r.Bypass)+cell(r.Barela)+'<td class="n"><b>'+c(r.cost)+'</b></td><td class="n">'+c(r.paid)+'</td><td class="n">'+(r.due>0.5?'<b style="color:var(--crit)">'+c(r.due)+'</b>':'—')+'</td></tr>'; }).join('')+
     '<tr class="tot"><td>Total</td><td class="n">'+c(T.Bypass.cost)+'</td><td class="n">'+c(T.Barela.cost)+'</td><td class="n">'+c(T.cost)+'</td><td class="n">'+c(T.paid)+'</td><td class="n">'+c(T.due)+'</td></tr>'+
-    '</tbody></table></div><p class="hint" style="padding:10px 14px">Site: Madan Yadav\'s murum, JCB, roller, Hiva, Dumper, M-Sand and Gitti are split by the site written in the registers and machine logs. Other payments count at Bypass unless the entry says Barela — write “Barela” in the Cash Book remark for Barela payments. Madan\'s items are paid in the same share as his whole account (paid '+c((dueAll()[DUE_ALIAS['madan yadav']]||{}).paid||0)+').</p></div>';
+    '</tbody></table></div><p class="hint" style="padding:10px 14px">Site: Madan Yadav\'s murum, JCB, roller, Hiva, Dumper, M-Sand and Gitti are split by the site written in the registers and machine logs. A Cash Book payment to a supplier is split the same way as that supplier’s deliveries in the registers (e.g. Subham Sahu’s steel all went to Barela); goods bought in a lot are spread over the lot’s rows. Other payments count at Bypass unless the entry says Barela — write “Barela” in the Cash Book remark for Barela payments. Madan\'s items are paid in the same share as his whole account (paid '+c((dueAll()[DUE_ALIAS['madan yadav']]||{}).paid||0)+').</p></div>';
   return h;
 }
 function dashToPayCard(){
@@ -1743,6 +1772,12 @@ function unbRow(t,v,n,act){
 <script>
 /* ================= MACHINE LOG (JCB / EARTHMOVING) ================= */
 /* Hire cost from the machine log: hour machines = hours × rate on that date; day machines (roller) = days worked × day rate */
+function mlogSetSite(id,site){
+  var l=(S.machineLogs||[]).find(function(x){return x.id===id;}); if(!l||l.site===site) return;
+  var old=l.site; l.site=site;
+  logAudit('U','Machine log',dmy(l.date),(MACH(l.machine)||{}).name+' site '+sname(old)+' → '+sname(site)); save(); render();
+  toast('✅ '+dmy(l.date)+' → '+(site==='site-barela'?'Barela':'Bypass'));
+}
 function mlogCost(rows){
   var by={}, amt=0, noRate=0;
   rows.forEach(function(l){
@@ -1792,6 +1827,21 @@ function P_mlog(){
    tile('s','Machines deployed',String(new Set(rows.map(r=>r.machine)).size),'of '+S.machines.length+' in the register')+
    (function(){ var c=mlogCost(rows); return tile('g','Total Cost',inr0(c.amt),c.txt); })()+
   '</div>';
+  /* ── hours run (घंटे) and cost at each site ── */
+  h+=(function(){
+    var isBl=function(l){ return l.site==='site-barela'; };
+    var one=function(list,name,cls){
+      var run=list.filter(function(l){ return !l.offsite&&(+l.hours>0); });
+      var hrs=R2(run.reduce(function(s,l){ return s+(+l.hours||0); },0));
+      /* a line that covers several days says so ("12 day BARELA", "11 day Bypass", "2 days") */
+      var seen={}, days=0; run.forEach(function(l){ var m=String(l.work||'').match(/(\d+)\s*days?/i);
+        if(m&&+m[1]>1){ days+=+m[1]; } else if(!seen[l.date]){ seen[l.date]=1; days++; } });
+      var c=mlogCost(run);
+      return tile(cls,name+' — hours run (घंटे)',fmtI(hrs,2)+' h',days+(mtype==='all'?' machine-day':' working day')+(days===1?'':'s')+' · '+run.length+' entries')+
+             tile(cls,name+' — cost',inr0(c.amt),c.txt||'—');
+    };
+    return '<div class="tiles" style="margin-top:12px">'+one(rows.filter(function(l){ return !isBl(l); }),'Bypass','s')+one(rows.filter(isBl),'Barela','g')+'</div>';
+  })();
   h+='<div class="warnbox noprint" style="margin-bottom:16px"><span>⚑</span><div><b>Why this register matters.</b> '+
    'A JCB invoice without a machine log, hour-meter reading and site certification is the first thing a bank auditor or GST officer '+
    'questions. Every bill raised here carries its measurement abstract, so the invoice, the log and the MB entry always agree.</div></div>';
@@ -1857,7 +1907,10 @@ function P_mlog(){
       return '<span class="mono"'+( isNewDate?'':' style="color:var(--muted)"')+'>'+dmy(r.date)+'</span>'+(isNewDate?badge:'')+dupBadge;
     }},
     {l:'Machine',f:function(r){var m=MACH(r.machine)||{}; return (r.mtype==='roller'?'🛞 ':'🚜 ')+'<b>'+esc(m.code||'—')+'</b>';}},
-    {l:'Site',f:function(r){return esc(scode(r.site));}},
+    {l:'Site',f:function(r){ var bl=r.site==='site-barela';
+      if(r.billed||r.offsite) return '<span class="pill '+(bl?'g':'s')+'">'+(bl?'Barela':'Bypass')+'</span>';
+      return '<select class="lb-sel" style="font-weight:600;color:'+(bl?'var(--good)':'inherit')+'" onclick="event.stopPropagation()" onchange="mlogSetSite(\''+r.id+'\',this.value)">'+
+        '<option value="site-bypass"'+(bl?'':' selected')+'>Bypass</option><option value="site-barela"'+(bl?' selected':'')+'>Barela</option></select>'; }},
     {l:'Operator',f:function(r){return esc(normOperator(r.operator));}},
     {l:'Work executed',f:function(r){return '<div style="max-width:300px;font-size:12px">'+esc(r.work||'—')+'</div>';}},
     {l:'Hr-meter',n:1,f:function(r){return r.hmStart?'<span class="mono" style="font-size:12px">'+fmtI(r.hmStart,1)+' → '+fmtI(r.hmEnd,1)+'</span>':'—';}},
@@ -8387,7 +8440,7 @@ function P_lb_murum(){
   var clearBtn='<button class="btn sm dngr" onclick="if(confirm(\'Clear all Hard Murum entries?\')){'+'S.lb.murum=[];save();render();}">🗑 Clear All</button>';
   let h=pageHead('Hard Murum Register','Madan Yadav · Click any cell to edit · Grand Total: '+total+' Trips',
     '<button class="btn sm" style="background:rgba(99,179,237,0.15);color:#63b3ed" onclick="fixAllDates()">📅 Fix Dates</button>'+
-    '<button class="btn sm" onclick="lbDedup(\'murum\')">🧹 Dedup</button>'+clearBtn);
+    '<button class="btn sm" onclick="lbDedup(\'murum\')">🧹 Dedup</button>'+lbUndoBtn('murum')+clearBtn);
   var murumCUM=all.reduce(function(s,r){return s+(+r.qty||0);},0);
   h+=lbTiles([
     {cls:'a',k:'Total Trips',v:total,n:murumCUM+' Trips'},
@@ -8395,9 +8448,15 @@ function P_lb_murum(){
     {cls:'s',k:'Total CFT',v:(murumCUM*600).toLocaleString()+' CFT',n:'@ 600 CFT per trip'},
     {cls:'w',k:'Total Cost',v:inr0(lbTripCost(all,'qty').amt),n:lbTripCost(all,'qty').txt||'Qty × Rate — write price in Rate col'}
   ]);
+  var mBp=all.filter(function(r){return r.site!=='Barela';}), mBl=all.filter(function(r){return r.site==='Barela';});
+  var cBp=lbTripCost(mBp,'qty'), cBl=lbTripCost(mBl,'qty');
+  h+=lbTiles([
+    {cls:'s',k:'Bypass — Hard Murum',v:inr0(cBp.amt),n:cBp.trips+' trips'+(cBp.noRate?' · '+cBp.noRateTrips+' without rate':'')},
+    {cls:'g',k:'Barela — Hard Murum',v:inr0(cBl.amt),n:cBl.trips+' trips'+(mBl.length?'':' · none marked Barela yet — choose Barela in the Site column')}
+  ]);
   h+=lbDueCard('murum',all);
   h+='<div class="card"><header><h3>Hard Murum — All Entries</h3><span class="sub">Click any cell to edit · Add rows below</span></header>';
-  h+=lbEditableTable('murum',['Date','M³ / Trips','Rate (₹)','Page / Remark'],all,all.map(function(_,i){return i;}));
+  h+=lbEditableTable('murum',['Date','M³ / Trips','Rate (₹)','Site','Page / Remark'],all,all.map(function(_,i){return i;}));
   h+=lbFooter('murum','Bypass');
   h+='</div>';
   return h;
@@ -8432,7 +8491,7 @@ function P_lb_dpr(){
   var dates=Object.keys(byDate).sort().reverse();
   var h=pageHead('DPR — Daily Manpower','Who worked on site each day · M = Mistri · H = Helper · B = Beldar',
     '<button class="btn pri" onclick="dprNewDay()">+ New day</button>'+
-    '<button class="btn sm" onclick="lbDedup(\'dpr\')">🧹 Dedup</button>'+
+    '<button class="btn sm" onclick="lbDedup(\'dpr\')">🧹 Dedup</button>'+lbUndoBtn('dpr')+
     '<button class="btn sm" onclick="expDprCSV()">Export CSV</button>');
   h+=lbTiles([
     {cls:'a',k:'Total man-days',v:fmtI(M+H+B,0),n:dates.length+' days on record'},
@@ -8903,9 +8962,11 @@ function P_lb_incoming(){
   if(!S.lb) S.lb={}; if(!S.lb.incoming) S.lb.incoming=[];
   S.lb.incoming.sort(function(a,b){return (toISO(a.date)||a.date)<(toISO(b.date)||b.date)?1:-1;});
   var all=S.lb.incoming;
-  /* Amount = Qty × Rate — but a typed Amount without a Rate is KEPT (rate is worked out from it) */
+  /* Amount = Qty × Rate only when no amount is written yet. A written amount is NEVER recalculated on opening the page:
+     a rounded rate (₹8.70) × qty used to turn ₹20,350 into ₹20,358, and a lot total ₹1,30,000 into 36 × ₹3,611.11.
+     Typing a new Rate or Qty in the table still recalculates the amount (lbEditRowLight). */
   all.forEach(function(r){ var q=+(r.qty||0),rt=+(r.rate||0),a=+(r.amt||0);
-    if(q>0&&rt!==0) r.amt=R2(q*rt); else if(a!==0){ if(q>0&&!rt) r.rate=R2(a/q); r.amt=R2(a); } else r.amt=0; }); /* a minus rate/amount ("less on bill", discount) is kept */
+    if(!a&&q>0&&rt!==0) r.amt=R2(q*rt); else r.amt=R2(a); }); /* a minus rate/amount ("less on bill", discount) is kept */
   if(S.ui.incNoPrice) return P_lb_incoming_noprice(all);
   var _np=all.filter(incNoPrice).length, _rp=all.filter(function(r){return incNoPrice(r)&&incRemarkPrice(r);}).length;
   var total=all.reduce(function(s,r){return s+(+r.amt||0);},0);
@@ -8913,7 +8974,7 @@ function P_lb_incoming(){
   var pend=R2(total-paid);
   var h=pageHead('Incoming Material Register','One-time incoming materials \u00b7 Qty \u00d7 Rate = Amount \u00b7 Bypass / Barela \u00b7 click any cell to edit',
     '<button class="btn sm gh" onclick="fixAllDates()">\ud83d\udcc5 Fix Dates</button>'+
-    '<button class="btn sm" onclick="lbDedup(\'incoming\')">\ud83e\uddf9 Dedup</button>'+
+    '<button class="btn sm" onclick="lbDedup(\'incoming\')">\ud83e\uddf9 Dedup</button>'+lbUndoBtn('incoming')+
     '<button class="btn pri" onclick="lbIncomingQuick()">+ Item (Qty \u00d7 Rate)</button>'+
     '<button class="btn sm gh" onclick="lbSetAllIncoming(\'Paid\')">✓ Mark All Paid</button>'+
     '<button class="btn sm" onclick="lbSetAllIncoming(\'Pending\')">↩ All Pending</button>'+
@@ -8931,7 +8992,7 @@ function P_lb_incoming(){
   if(!all.length) h+='<div class="card"><header><h3>No items yet</h3></header><p class="hint" style="padding:16px">Use + Item (Qty \u00d7 Rate) \u2014 fill Qty and Rate, Amount is automatic.</p></div>';
   return h;
 }
-function incNoPrice(r){ return !(+r.amt); } /* a minus amount (discount row) has a price */
+function incNoPrice(r){ return !(+r.amt)&&!r.transfer&&!r.lot; } /* a minus amount (discount row) has a price */
 /* "900/-", "₹1,600", "Rs 600" in the remark → the amount the site wrote down */
 function incRemarkPrice(r){
   var t=String(r.remark||''); var m=t.match(/(?:₹|rs\.?)\s*([\d,]+(?:\.\d+)?)/i)||t.match(/([\d,]+(?:\.\d+)?)\s*\/-/);
@@ -8979,7 +9040,7 @@ var CASH_RULES=[['dharmender dubey','5401'],['dharmendar dubey','5401'],['vakil'
   ['vishal yadav','5301'],['hemraj','5301'],['irfan','5301'],['golu','5301'],['welding','5301'],['dhruv','5301'],['carpenter','5301'],['pappu','5301'],['narendra','5301'],['contractor','5301'],['neeraj','5303'],['basu','5103']];
 function cashRowText(r){ return ((r.party||'')+' '+(r.remark||'')).toLowerCase(); }
 function cashFindParty(r){
-  var n=String(r.party||'').toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim(); if(n.length<3) return null;
+  var n=String(r.payTo||r.party||'').toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim(); if(n.length<3) return null;
   return (S.parties||[]).find(function(p){ var q=String(p.name||'').toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
     return q&&(q===n||(n.length>=5&&q.indexOf(n)===0)||(q.length>=5&&n.indexOf(q)===0)); })||null;
 }
@@ -9004,7 +9065,7 @@ function cashLinesFor(r,skipVch){
     var ac=p.ac||'2101';
     (S.purchases||[]).filter(function(b){return b.party===p.id&&R2((+b.net||0)-(+b.paid||0))>0.5;}).sort(function(a,b){return a.date<b.date?-1:1;}).forEach(function(b){
       if(left<=0) return; var due=R2((+b.net||0)-(+b.paid||0)), x=R2(Math.min(due,left)); lines.push({ac:ac,dr:x,cr:0,note:b.no}); left=R2(left-x); });
-    if(left>0&&(lines.length||/creditor|supplier|vendor/i.test(p.type||''))){ lines.push({ac:ac,dr:left,cr:0,note:'Advance — '+p.name}); left=0; }
+    if(left>0&&!r.payTo&&(lines.length||/creditor|supplier|vendor/i.test(p.type||''))){ lines.push({ac:ac,dr:left,cr:0,note:'Advance — '+p.name}); left=0; }   /* with payTo the rest stays the payee's own work */
   }
   if(left>0) lines.push({ac:cashHeadFor(r),dr:left,cr:0,note:r.party||''});
   lines.push({ac:cash?'1102':'1103',dr:0,cr:amt,note:cash?'Cash':(r.mode||'Bank')});
@@ -9444,8 +9505,8 @@ function lbEditRowLight(el){
         // Rate or qty changed → recalculate amt
         if(r.qty&&r.rate) r.amt=R2(r.qty*r.rate); /* rate may be minus for a discount row */
       } else if(col==='amt'){
-        // Amt typed manually → back-calculate rate if qty known
-        if(r.qty>0&&r.amt) r.rate=R2(r.amt/r.qty);
+        // Amt typed manually → work out a rate only when none is written and it divides cleanly (never for a lot total)
+        if(r.qty>0&&r.amt&&!r.rate&&!r.lot&&Math.abs(R2(r.amt/r.qty)*r.qty-r.amt)<0.005) r.rate=R2(r.amt/r.qty);
       }
     }
     if(reg==='diesel'&&(col==='rate'||col==='qty')){ var _l=lbNum(r.qty), _x=lbNum(r.rate); if(_l) r.litres=_l; if(_l&&_x) r.amount=R2(_l*_x); }
@@ -9780,28 +9841,63 @@ function lbPhotoChange(reg){
   var btn=document.getElementById('lb-ai-btn-'+reg);
   if(btn) btn.textContent='✨ Read Photo';
 }
+/* A row is a duplicate ONLY when every field is the same (item, size, qty, rate, amount, remark, bill no …).
+   The old button compared just date+qty+party+remark and deleted different items bought together
+   (e.g. "Switch 6 Amp" and "Socket 6 Amp" from Himanshu on 3/8) — 35 real Incoming Goods rows. */
+function lbExactKey(r){
+  var o={};
+  Object.keys(r||{}).sort().forEach(function(k){
+    if(k.charAt(0)==='_'||k==='id') return;
+    var v=r[k]; if(v===null||v===undefined||v==='') return;
+    if(typeof v==='object') v=JSON.stringify(v);
+    var s=String(v).trim().toLowerCase().replace(/\s+/g,' ');
+    if(s!==''&&!isNaN(+s)) s=String(+s);
+    o[k]=s;
+  });
+  return JSON.stringify(o);
+}
+function lbExactDups(register){
+  var rows=(S.lb&&S.lb[register])||[], seen={}, out=[];
+  rows.forEach(function(r,i){
+    if(!r||r._nodup) return;   // user marked as genuine — never auto-remove
+    var k=lbExactKey(r);
+    if(seen[k]!==undefined) out.push({i:i,keep:seen[k]}); else seen[k]=i;
+  });
+  return out;
+}
 function lbDedup(register){
   if(!S.lb) S.lb={}; if(!S.lb[register]) S.lb[register]=[];
-  if(!S.trips) S.trips=[];
-  // 1. Dedup the logbook array
-  var before=S.lb[register].length;
-  var seen={};
-  S.lb[register]=S.lb[register].filter(function(r){
-    if(r._nodup) return true; // user marked as genuine — never auto-remove
-    var d=(r.date||'').replace(/[^0-9]/g,'');
-    var q=String(r.trips||r.qty||r.cum||'').replace(/[^0-9]/g,'');
-    var p=(r.party||r.partyName||'').toLowerCase().trim();
-    var s=(r.site||'');
-    // Include remark so same-date+qty but different remark = NOT a duplicate
-    var rm=(r.remark||r.remarks||'').toLowerCase().trim().slice(0,20);
-    var key=d+'|'+q+'|'+p+'|'+s+'|'+rm;
-    if(seen[key]) return false;
-    seen[key]=true; return true;
-  });
-  var removed=before-S.lb[register].length;
-  // Only dedup the logbook — never touch S.trips
+  var rows=S.lb[register];
+  var dups=lbExactDups(register);
+  var similar=Object.keys(lbFindDupIndices(register)).length;
+  if(!dups.length){
+    toast(similar?'✅ Nothing deleted — no row is an exact copy. '+similar+' rows only look alike (highlighted): check them, then ✕ delete or ✓ mark genuine yourself.':'✅ No duplicates found');
+    return;
+  }
+  var lab=function(r){ return [r.date, r.item||r.size||'', r.qty||r.trips||r.litres||'', r.party||'', r.amt||r.amount?('₹'+(r.amt||r.amount)):'', (r.remark||'').slice(0,30)].filter(Boolean).join(' · '); };
+  var list=dups.slice(0,12).map(function(d){ return '• row '+(d.i+1)+' = copy of row '+(d.keep+1)+': '+lab(rows[d.i]); }).join('\n');
+  if(!confirm('Delete '+dups.length+' exact cop'+(dups.length>1?'ies':'y')+' (every field the same)?\n\n'+list+(dups.length>12?'\n… and '+(dups.length-12)+' more':'')+'\n\nThe first copy of each is kept.')) return;
+  try{ localStorage.setItem(KEY+'_before_dedup',JSON.stringify({register:register,rows:rows,at:new Date().toISOString()})); }catch(e){}
+  var drop={}; dups.forEach(function(d){ drop[d.i]=1; });
+  S.lb[register]=rows.filter(function(r,i){ return !drop[i]; });
+  if(typeof logAudit==='function') logAudit('D','Register',register,'Dedup removed '+dups.length+' exact copies');
   save(); render();
-  toast(removed>0?'✅ Removed '+removed+' duplicate'+(removed>1?'s':''):'✅ No duplicates found');
+  toast('✅ Removed '+dups.length+' exact cop'+(dups.length>1?'ies':'y')+' — ↩ Undo Dedup is on the same page');
+}
+function lbUndoBtn(reg){
+  reg=String(reg).replace(/'/g,'');
+  var o=null; try{ o=JSON.parse(localStorage.getItem(KEY+'_before_dedup')||'null'); }catch(e){}
+  return (o&&o.register===reg)?'<button class="btn sm" onclick="lbUndoDedup()" title="Put back the rows the last Dedup removed">↩ Undo Dedup</button>':'';
+}
+function lbUndoDedup(){
+  var raw=null; try{ raw=localStorage.getItem(KEY+'_before_dedup'); }catch(e){}
+  if(!raw){ toast('Nothing to undo',true); return; }
+  var o; try{ o=JSON.parse(raw); }catch(e){ toast('The kept copy cannot be read',true); return; }
+  var cur=(S.lb[o.register]||[]).length;
+  if(!confirm('Put back the '+o.register+' register as it was before the last Dedup?\n('+o.rows.length+' rows then · '+cur+' now — rows added since then will be lost)')) return;
+  S.lb[o.register]=o.rows;
+  try{ localStorage.removeItem(KEY+'_before_dedup'); }catch(e){}
+  save(); render(); toast('↩ '+o.register+' restored ('+o.rows.length+' rows)');
 }
 function lbFooter(register, defaultSite){
   var site=defaultSite||'Bypass';
@@ -9819,7 +9915,7 @@ function lbFooter(register, defaultSite){
   return '<div style="display:flex;gap:8px;align-items:center;padding:10px 14px;border-top:1px solid var(--line);flex-wrap:wrap;background:var(--surface2)">'+
     '<button class="btn sm pri" onclick="lbAddRowSite('+rq+','+sq+')">+ Add Row</button>'+
     '<button class="btn sm" onclick="lbBulkAdd('+rq+','+sq+')">📋 Bulk Add</button>'+
-    '<button class="btn sm" onclick="lbDedup('+rq+')">🧹 Dedup</button>'+
+    '<button class="btn sm" onclick="lbDedup('+rq+')">🧹 Dedup</button>'+lbUndoBtn(rq)+
     fillBtn+
     scanBillBtn+
     '<input id="'+pid+'" class="in" style="flex:1;min-width:120px;font-size:0.82rem;padding:5px 10px" placeholder="Type or upload photo...">'+
@@ -10146,7 +10242,7 @@ function P_lb_gitti(){
   var gittiDups=Object.keys(lbFindDupIndices('gitti')).length;
   if(gittiDups) h+='<div style="background:var(--crit-soft,#fff0f0);color:var(--crit,#c00);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px;display:flex;align-items:center;gap:10px">'+
     '<b>⚠️ '+gittiDups+' duplicate'+(gittiDups>1?'s':'')+' found — highlighted in red below.</b>'+
-    '<button class="btn sm dngr" style="margin-left:auto" onclick="lbDedup(\'gitti\')">🧹 Remove All Duplicates</button></div>';
+    '<button class="btn sm dngr" style="margin-left:auto" onclick="lbDedup(\'gitti\')">🧹 Remove exact copies</button>'+lbUndoBtn('gitti')+'</div>';
   h+='<div class="card" style="margin-bottom:14px"><header><h3>Gitti — Bypass Side</h3><span class="sub">Page 11</span></header>';
   h+=lbEditableTable('gitti',['Date','Party','Qty','Rate / load','Site','Remark'],bypass,bypassIdx);
   h+=lbFooter('gitti','Bypass');
@@ -10163,6 +10259,8 @@ var LB_COST_UNIT={gitti:'load',msand:'load',loha:'kg',cement:'bag',adhesive:'bag
 function lbNum(x){ var m=String(x==null?'':x).replace(/,/g,'').match(/-?\d+(?:\.\d+)?/); return m?(parseFloat(m[0])||0):0; }   /* first number only: '5.5 m3' → 5.5, '50 Bag' → 50 */
 function lbRowCost(reg,r){
   if(!r) return null;
+  if(r.transfer||r.nil) return 0;            /* moved from the other site (already costed there) / "Nill" day */
+  if(r.lot&&!(+r.amt)) return 0;             /* part of a lot whose total is on the first row of that lot */
   if(reg==='incoming'||reg==='cash') return (+r.amt||0)||null;
   if(reg==='diesel'){ var a=+r.amount||0; if(a) return a; var l=+r.litres||lbNum(r.qty), x=lbNum(r.rate); return l&&x?R2(l*x):null; }
   if(reg==='hava'||reg==='dumper'){ var t=+r.trips||0, y=lbTripRate(r); return t&&y?R2(t*y):(t?null:0); }
@@ -10197,10 +10295,10 @@ function lbCostTiles(reg,rows){
    Owner's rule: the only payments are the ones in the Cash Book (petty cash / PC payments).
    Incoming Goods marked Paid were paid on the spot; everything else in the logbook is still owed until a Cash Book payment covers it.
    A supplier with vendor bills (e.g. Madan Yadav) is measured by his bills, not by the register rows, so nothing is counted twice. */
-var DUE_STOP={traders:1,trader:1,trades:1,ji:1,jbp:1,jabalpur:1,barela:1,bypass:1,gour:1,gor:1,and:1,sons:1,pvt:1,ltd:1,sales:1,the:1,enterprises:1,enterprise:1,infra:1,company:1,store:1,stores:1,shop:1,cash:1,cas:1,chack:1,paid:1,agst:1,against:1,online:1,product:1,products:1,petroleum:1,pump:1,jcb:1};
-function dueKey(name){ return String(name||'').toLowerCase().replace(/[^a-z ]/g,' ').split(/\s+/).filter(function(t){ return t.length>=3&&!DUE_STOP[t]; }).sort().join(' '); }
+var DUE_STOP={saliwada:1,aac:1,block:1,blocks:1,traders:1,trader:1,trades:1,ji:1,jbp:1,jabalpur:1,barela:1,bypass:1,gour:1,gor:1,and:1,sons:1,pvt:1,ltd:1,sales:1,the:1,enterprises:1,enterprise:1,infra:1,company:1,store:1,stores:1,shop:1,cash:1,cas:1,chack:1,paid:1,agst:1,against:1,online:1,product:1,products:1,petroleum:1,pump:1,jcb:1};
+function dueKey(name){ return String(name||'').toLowerCase().replace(/[^a-z ]/g,' ').split(/\s+/).filter(function(t,i,all){ return t.length>=3&&!DUE_STOP[t]&&all.indexOf(t)===i; }).sort().join(' '); }
 var DUE_REGS=['gitti','msand','loha','cement','adhesive','bindingwire','tmgitti','readymix','bricks','blocks','diesel'];
-var DUE_LABEL={gitti:'Gitti',msand:'M-Sand',loha:'Loha',cement:'Cement',adhesive:'Adhesive',bindingwire:'Binding wire',tmgitti:'T.M. Gitti',readymix:'Readymix',bricks:'Bricks',blocks:'AAC blocks',diesel:'Diesel',incoming:'Incoming goods (pending)',bills:'Vendor bills'};
+var DUE_LABEL={gitti:'Gitti',msand:'M-Sand',loha:'Loha',cement:'Cement',adhesive:'Adhesive',bindingwire:'Binding wire',tmgitti:'T.M. Gitti',readymix:'Readymix',bricks:'Bricks',blocks:'AAC blocks',diesel:'Diesel',incoming:'Incoming goods (pending)',bills:'Vendor bills',after:'After his account — not billed yet'};
 function duePartyName(r,reg){
   if(reg==='diesel'&&(r.vchId||/cv\/|pv\/|voucher|bill/i.test(String(r.remark||'')))) return '';   /* diesel already paid through its voucher */
   var p=String(r.party||'').trim(), k=dueKey(p);
@@ -10209,6 +10307,20 @@ function duePartyName(r,reg){
   return p;
 }
 var DUE_ALIAS={};
+/* Work done after a supplier's account was made (bill field "covers": the last date each item is billed to),
+   e.g. Madan's account counts murum to 11/9 and JCB to 31/8 — later trips and hours are still owed but not billed yet. */
+var AFTER_ITEM={murum:'Hard Murum',jcb:'JCB',roller:'Road roller'};
+function afterBillWork(){
+  var out=[];
+  (S.purchases||[]).forEach(function(b){ var cv=b.covers; if(!cv) return;
+    if(cv.murum) ((S.lb&&S.lb.murum)||[]).forEach(function(r){ var d=toISO(r.date)||r.date; if(!(d>cv.murum)) return; var c=lbRowCost('murum',r)||0;
+      if(c>0) out.push({pid:b.party,bill:b.no,kind:'murum',item:AFTER_ITEM.murum,site:(r.site==='Barela'||r.site==='site-barela')?'Barela':'Bypass',amt:c,date:d,qty:lbNum(r.qty)}); });
+    (S.machineLogs||[]).forEach(function(l){ var m=MACH(l.machine)||{}; var k=m.cat||l.mtype; if(m.owner!==b.party||!cv[k]||l.offsite||!(+l.hours>0)) return;
+      var d=toISO(l.date)||l.date; if(!(d>cv[k])) return; var c=mlogCost([l]).amt;
+      if(c>0) out.push({pid:b.party,bill:b.no,kind:k,item:AFTER_ITEM[k]||k,site:l.site==='site-barela'?'Barela':'Bypass',amt:c,date:d,qty:+l.hours}); });
+  });
+  return out;
+}
 function dueAll(){
   var P={}; DUE_ALIAS={};
   var get=function(name){ var k=dueKey(name); if(!k) return null; if(DUE_ALIAS[k]) return P[DUE_ALIAS[k]]; if(!P[k]) P[k]={key:k,name:String(name).trim(),cost:0,noPrice:0,parts:{},paid:0,payRows:0,byBill:false}; return P[k]; };
@@ -10217,14 +10329,15 @@ function dueAll(){
     if(!P[id]) P[id]={key:id,name:pt.name,cost:0,noPrice:0,parts:{},paid:0,payRows:0,byBill:true,pid:pt.id};
     var nk=dueKey(pt.name); if(nk&&!DUE_ALIAS[nk]) DUE_ALIAS[nk]=id;
     P[id].cost+=+b.net||0; P[id].paid+=+b.paid||0; P[id].parts.bills=(P[id].parts.bills||0)+(+b.net||0); });
+  afterBillWork().forEach(function(x){ var p=P['id:'+x.pid]; if(!p) return; p.cost+=x.amt; p.parts.after=(p.parts.after||0)+x.amt; p.after=(p.after||0)+x.amt; });
   /* advances paid to a bill supplier (payment line "Advance — <name>") also count as paid */
   (S.vouchers||[]).forEach(function(v){ if(!/^(PV|CV|JV)$/.test(v.type)) return; (v.lines||[]).forEach(function(l){ if(!(+l.dr>0)||!/^advance/i.test(String(l.note||''))) return;
     var nt=String(l.note).toLowerCase(); Object.keys(P).forEach(function(k){ var p=P[k]; if(p.byBill&&p.name&&nt.indexOf(String(p.name).toLowerCase())>=0){ p.paid+=+l.dr; p.adv=(p.adv||0)+(+l.dr); } }); }); });
   DUE_REGS.forEach(function(reg){ ((S.lb&&S.lb[reg])||[]).forEach(function(r){ var p=get(duePartyName(r,reg)); if(!p||p.byBill) return;
     var c=lbRowCost(reg,r); if(c===null){ p.noPrice++; return; } if(!c) return; p.cost+=c; p.parts[reg]=(p.parts[reg]||0)+c; }); });
-  ((S.lb&&S.lb.incoming)||[]).forEach(function(r){ if(/paid/i.test(r.status||'')||r.billId||r.bill||r._linkedBill) return; var p=get(r.party); if(!p) return;
+  ((S.lb&&S.lb.incoming)||[]).forEach(function(r){ if(/paid/i.test(r.status||'')||r.transfer||(r.lot&&!(+r.amt))||r.billId||r.bill||r._linkedBill) return; var p=get(r.party); if(!p) return;   /* a lot counts once, on the row that carries its total */
     var c=+r.amt||0; if(!c){ p.noPrice++; return; } p.cost+=c; p.parts.incoming=(p.parts.incoming||0)+c; });
-  ((S.lb&&S.lb.cash)||[]).forEach(function(r){ if(!/paid/i.test(r.status||'')) return; var k=dueKey(r.party); var p=P[DUE_ALIAS[k]||k]; if(!p||p.byBill) return; p.paid+=+r.amt||0; p.payRows++; });
+  ((S.lb&&S.lb.cash)||[]).forEach(function(r){ if(!/paid/i.test(r.status||'')) return; var k=dueKey(r.payTo||r.party); var p=P[DUE_ALIAS[k]||k]; if(!p||p.byBill) return; p.paid+=+r.amt||0; p.payRows++; });
   Object.keys(P).forEach(function(k){ var p=P[k]; p.cost=R2(p.cost); p.paid=R2(p.paid); p.due=R2(p.cost-p.paid); if(!p.cost&&!p.noPrice) delete P[k]; });
   return P;
 }
@@ -10297,7 +10410,7 @@ function P_lb_hava(){
   var havaDups=Object.keys(lbFindDupIndices('hava')).length;
   if(havaDups) h+='<div style="background:var(--crit-soft,#fff0f0);color:var(--crit,#c00);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px;display:flex;align-items:center;gap:10px">'+
     '<b>⚠️ '+havaDups+' duplicate'+(havaDups>1?'s':'')+' found — highlighted in red below.</b>'+
-    '<button class="btn sm dngr" style="margin-left:auto" onclick="lbDedup(\'hava\')">🧹 Remove All Duplicates</button></div>';
+    '<button class="btn sm dngr" style="margin-left:auto" onclick="lbDedup(\'hava\')">🧹 Remove exact copies</button>'+lbUndoBtn('hava')+'</div>';
   h+='<div class="card" style="margin-bottom:14px"><header><h3>Hava — Bypass Site</h3></header>';
   h+=lbEditableTable('hava',['Date','Trips','Payment','Site'],bypass,bypassIdx);
   h+=lbFooter('hava','Bypass');
@@ -10335,7 +10448,7 @@ function P_lb_dumper(){
   var dumperDups=Object.keys(lbFindDupIndices('dumper')).length;
   if(dumperDups) h+='<div style="background:var(--crit-soft,#fff0f0);color:var(--crit,#c00);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px;display:flex;align-items:center;gap:10px">'+
     '<b>⚠️ '+dumperDups+' duplicate'+(dumperDups>1?'s':'')+' found — highlighted in red below.</b>'+
-    '<button class="btn sm dngr" style="margin-left:auto" onclick="lbDedup(\'dumper\')">🧹 Remove All Duplicates</button></div>';
+    '<button class="btn sm dngr" style="margin-left:auto" onclick="lbDedup(\'dumper\')">🧹 Remove exact copies</button>'+lbUndoBtn('dumper')+'</div>';
   h+='<div class="card" style="margin-bottom:14px"><header><h3>Dumper — Bypass Site</h3></header>';
   h+=lbEditableTable('dumper',['Date','Trips','Payment','Site'],bypass,bypassIdx);
   h+=lbFooter('dumper','Bypass');
@@ -10452,7 +10565,7 @@ function lbPageBtns(reg){
   var fixBtn=(reg==='loha'||reg==='bindingwire'||reg==='cement'||reg==='readymix'||reg==='bricks'||reg==='blocks')
     ?'<button class="btn sm" style="background:rgba(99,179,237,0.15);color:#63b3ed" onclick="fixLbSuppliers('+rq+')">🔧 Fix Suppliers</button>':''
   return '<button class="btn sm" onclick="fixAllDates()">Fix Dates</button>'+fixBtn+
-         '<button class="btn sm" onclick="lbDedup('+rq+')">🧹 Dedup</button>';
+         '<button class="btn sm" onclick="lbDedup('+rq+')">🧹 Dedup</button>'+lbUndoBtn(rq);
 }
 function P_lb_loha(){
   if(!S.lb) S.lb={}; if(!S.lb.loha) S.lb.loha=[];
@@ -10470,7 +10583,7 @@ function P_lb_loha(){
     '<button class="btn sm" style="background:rgba(99,179,237,0.15);color:#63b3ed" onclick="fixLbSizes()">🔧 Fix Sizes</button>'+
     '<button class="btn sm" style="background:rgba(99,179,237,0.15);color:#63b3ed" onclick="fixLbSuppliers(\'loha\')">🔧 Fix Suppliers</button>'+
     '<button class="btn sm" onclick="fixAllDates()">Fix Dates</button>'+
-    '<button class="btn sm" onclick="lbDedup(\'loha\')">🧹 Dedup</button>');
+    '<button class="btn sm" onclick="lbDedup(\'loha\')">🧹 Dedup</button>'+lbUndoBtn('loha'));
   h+=lbTiles([
     {cls:'a',k:'Total Entries',v:all.length,n:totalKg.toLocaleString()+' kg total'},
     {cls:'s',k:'Bypass',v:kgOf(bp).toLocaleString()+' kg',n:bp.length+' entries'},
@@ -10617,7 +10730,7 @@ function P_lb_bricks(){
   let h=pageHead('Bricks — ईंट Register ('+all.length+' entries)','Laal (red) bricks · ACC blocks go to the Blocks page · click any cell to edit',
     '<button class="btn sm" style="background:rgba(99,179,237,0.15);color:#63b3ed" onclick="lbMoveAccOutOfBricks()">⇢ Move ACC → Blocks</button>'+
     '<button class="btn sm" onclick="fixAllDates()">Fix Dates</button>'+
-    '<button class="btn sm" onclick="lbDedup(\'bricks\')">🧹 Dedup</button>');
+    '<button class="btn sm" onclick="lbDedup(\'bricks\')">🧹 Dedup</button>'+lbUndoBtn('bricks'));
   h+=lbTiles([
     {cls:'a',k:'Total Entries',v:all.length,n:'rows recorded'},
     {cls:'s',k:'Bypass Bricks',v:fmtI(bpT,0)+' BN',n:bp.length+' entr'+(bp.length>1?'ies':'y')},
@@ -12304,6 +12417,42 @@ function nlCloudStatus(st,msg){
     error:['☁ Sync error','var(--crit)'],connecting:['☁ Connecting…','var(--muted)']};
   var m=map[st]||map.saved; el.textContent=m[0]; el.style.color=m[1]; el.title=msg||'';
 }
+/* ---------- AI Inbox on the Render website (no Firebase): the server keeps the inbox, the books stay in this browser ----------
+   Claude (claude.ai chat → Nirman Ledger connector) sends lines to the server; this page shows them; approving adds them here. */
+var SRVIB={on:false,configured:false,key:(function(){ try{ return localStorage.getItem('nl_inbox_key')||''; }catch(e){ return ''; } })(),timer:null,snapAt:0,err:''};
+async function srvIbInit(){
+  if((typeof CLOUD!=='undefined'&&CLOUD.on)||!/^https?:$/.test(location.protocol)) return;
+  try{ var r=await fetch('/api/inbox/ping',{cache:'no-store'}); if(!r.ok) return; var j=await r.json(); if(!j||!j.ok) return; SRVIB.on=true; SRVIB.configured=!!j.configured; }catch(e){ return; }
+  var b=document.getElementById('inboxBtn'); if(b) b.style.display='';
+  if(SRVIB.key) srvIbPoll(); SRVIB.timer=setInterval(srvIbPoll,60000);
+}
+async function srvIbPoll(){
+  if(!SRVIB.on||!SRVIB.key) return;
+  try{ var r=await fetch('/api/inbox',{headers:{'x-inbox-key':SRVIB.key},cache:'no-store'});
+    if(r.status===401){ SRVIB.err='The inbox key is not right — use the same password as MCP_TOKEN on Render.'; if(S.ui.page==='aiinbox') render(); return; }
+    var j=await r.json(); SRVIB.err=''; cloudInboxChanged(j.items||[]); srvIbSnapshot(false);
+  }catch(e){ SRVIB.err='Cannot reach the website server right now.'; }
+}
+/* recent registers go to the server so Claude can see what is already in the books (avoids duplicates) */
+function srvIbSnapshot(force){
+  if(!SRVIB.on||!SRVIB.key||(!force&&Date.now()-SRVIB.snapAt<10*60000)) return; SRVIB.snapAt=Date.now();
+  var from=new Date(Date.now()-120*864e5).toISOString().slice(0,10), recent=function(arr){ return (arr||[]).filter(function(r){ return r&&(toISO(r.date)||String(r.date||''))>=from; }).slice(0,1500); };
+  var items={}; Object.keys(S.lb||{}).forEach(function(k){ if(Array.isArray(S.lb[k])&&k!=='bills') items['lb.'+k]=recent(S.lb[k]); });
+  items.machineLogs=recent(S.machineLogs); items.trips=recent(S.trips);
+  items.purchases=recent((S.purchases||[]).map(function(b){ return {date:b.date,no:b.no,party:(P(b.party)||{}).name,ref:b.vendorRef,amount:b.gross,paid:b.paid}; }));
+  fetch('/api/snapshot',{method:'POST',headers:{'content-type':'application/json','x-inbox-key':SRVIB.key},body:JSON.stringify({items:items})}).catch(function(){});
+}
+function srvIbSetKey(){
+  var v=((document.getElementById('ibKey')||{}).value||'').trim(); if(!v){ toast('Type the inbox key',true); return; }
+  SRVIB.key=v; try{ localStorage.setItem('nl_inbox_key',v); }catch(e){} SRVIB.err='';
+  srvIbPoll().then(function(){ if(!SRVIB.err) srvIbSnapshot(true); render(); toast(SRVIB.err?SRVIB.err:'✅ Inbox connected',!!SRVIB.err); });
+}
+function ibUpdate(id,patch){
+  if(typeof CLOUD!=='undefined'&&CLOUD.on&&CLOUD.adapter) return CLOUD.adapter.inboxUpdate(id,patch);
+  if(SRVIB.on&&SRVIB.key) return fetch('/api/inbox/'+encodeURIComponent(id),{method:'POST',headers:{'content-type':'application/json','x-inbox-key':SRVIB.key},body:JSON.stringify(patch)})
+    .then(function(r){ srvIbPoll(); return r; });
+  return Promise.resolve();
+}
 /* ---------- AI Inbox (cloud) ---------- */
 function cloudInboxChanged(list){
   CLOUD.inbox=list||[];
@@ -12318,7 +12467,11 @@ function P_aiinbox(){
   var cnt=function(s){return list.filter(function(x){return x.status===s;}).length;};
   var h=pageHead('AI Inbox','Everything Claude read — from the “Add Update” button or from your Claude chat. Nothing reaches the books until you approve it.',
     CLOUD.on?'<button class="btn pri" onclick="aiAddUpdateOpen()">+ Add Update</button>':'');
-  if(!CLOUD.on){ return h+'<div class="card"><div class="body"><p>The AI Inbox works on the live site (nirman.korienaureate.online). In this offline copy use <b>✨ Add from Claude</b>.</p></div></div>'; }
+  if(!CLOUD.on&&!SRVIB.on){ return h+'<div class="card"><div class="body"><p>The AI Inbox works on the live site (nirman.korienaureate.online). In this offline copy use <b>✨ Add from Claude</b>.</p></div></div>'; }
+  if(!CLOUD.on&&!SRVIB.configured) return h+'<div class="card"><div class="body"><p>The Claude connector is not switched on yet: on Render, add the environment variable <b>MCP_TOKEN</b> (see the setup steps), then reload this page.</p></div></div>';
+  if(!CLOUD.on&&(!SRVIB.key||SRVIB.err)) return h+'<div class="card"><div class="body"><p><b>Connect the inbox once on this computer.</b> Type the same password you set as <code>MCP_TOKEN</code> on Render. It is saved only in this browser.</p>'+
+    (SRVIB.err?'<p style="color:var(--crit)">'+esc(SRVIB.err)+'</p>':'')+
+    '<div style="display:flex;gap:8px;max-width:520px"><input id="ibKey" class="in" type="password" style="flex:1;font-family:var(--mono)" placeholder="MCP_TOKEN"><button class="btn pri" onclick="srvIbSetKey()">Connect</button></div></div></div>';
   h+='<div class="tabs">'+[['PENDING_REVIEW','To review'],['APPROVED','Approved'],['REJECTED','Rejected']].map(function(t){
     return '<button class="tab'+(tab===t[0]?' on':'')+'" onclick="S.ui.ibTab=\''+t[0]+'\';render()">'+t[1]+' ('+cnt(t[0])+')</button>'; }).join('')+'</div>';
   var rows=list.filter(function(x){return x.status===tab;});
@@ -12352,12 +12505,12 @@ function aiInboxReview(id){
 }
 function aiInboxReject(id){
   var why=prompt('Reject this item? Optional reason:',''); if(why===null) return;
-  CLOUD.adapter.inboxUpdate(id,{status:'REJECTED',decidedBy:(CLOUD.user||{}).email||'',decidedAt:new Date().toISOString(),reason:why})
+  ibUpdate(id,{status:'REJECTED',decidedBy:(CLOUD.user||{}).email||USER(),decidedAt:new Date().toISOString(),reason:why})
     .then(function(){ toast('Rejected'); });
 }
 function aiInboxApproved(id,summary){
-  if(!id||!CLOUD.adapter) return;
-  CLOUD.adapter.inboxUpdate(id,{status:'APPROVED',decidedBy:(CLOUD.user||{}).email||'',decidedAt:new Date().toISOString(),applied:summary||''});
+  if(!id) return;
+  ibUpdate(id,{status:'APPROVED',decidedBy:(CLOUD.user||{}).email||USER(),decidedAt:new Date().toISOString(),applied:summary||''});
 }
 /* ---------- Add Update: text + photos/PDF → Claude (server) → inbox → review ---------- */
 function aiAddUpdateOpen(){
@@ -12488,6 +12641,7 @@ function boot(){
   const ic=document.getElementById('themeIc'); if(ic) ic.textContent=t==='dark'?'☾':'☀';
   load();
   setTimeout(backupReminder,1500);
+  setTimeout(srvIbInit,1200);
 
   /* ── Auto-clean: remove bad LB- entries & zero impossible CFT values ── */
   if(S.trips && S.trips.length){
@@ -12564,7 +12718,7 @@ function boot(){
   render();
   waStartPolling();
   // Resume auto-sync if PIN was previously saved
-  if(window.NL_CLOUD_CONFIG){
+  if(window.NL_CLOUD_CONFIG&&window.NL_CLOUD_CONFIG.firebase){   /* only the Firebase set-up has its own login; other sync add-ons (e.g. Supabase) keep the app's lock */
     /* live site: Firebase login replaces the local password lock; cloud.js takes over syncing */
     CLOUD.on=true; nlCloudStatus('connecting');
     var _ls=document.getElementById('lockScreen'); if(_ls) _ls.style.display='none';
@@ -12992,8 +13146,7 @@ function backupExcel(){
   }
 }
 </script>
-<script>if(window.NL_CLOUD_CONFIG){ var _cs=document.createElement('script'); _cs.type='module'; _cs.src='cloud.js'; document.body.appendChild(_cs); }</script>
+<script>if(window.NL_CLOUD_CONFIG){ var _cs=document.createElement('script'); _cs.type='module'; _cs.src='cloud.js?v=3'; document.body.appendChild(_cs); }</script>
 
-<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/v31edd6df95cf4e85bb4c19e7a9bdbcba1788362987495" integrity="sha512-iIg7k2xntmwu6/uSb5tpc/hySgZc4eoL31yB29W6tJFo2akwjPWcEqnCEdJvGexCL0KEQwVYv5BlowfhVz26hg==" data-cf-beacon='{"version":"2024.11.0","token":"4edd5f8ec12a48cfa682ab8261b80a79","spa":2}' crossorigin="anonymous"></script>
 </body>
 </html>

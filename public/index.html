@@ -331,7 +331,7 @@ textarea.in{min-height:58px;resize:vertical}
   <aside id="rail">
     <div class="brand">
       <div class="mark" id="railMark">KA</div>
-      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 02-Oct 15:05</span></div>
+      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 02-Oct 15:35</span></div>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -1659,7 +1659,7 @@ function scShare(kind){   /* {Bypass:f, Barela:f} from the registers for one of 
   else if(kind==='murum') (lb.murum||[]).forEach(function(r){ add(scSiteOfText((r.site||'')+' '+(r.remark||'')),lbRowCost('murum',r)||0); });
   else if(kind==='msand'||kind==='gitti') (lb[kind]||[]).forEach(function(r){ if(/madan/i.test(r.party||'')&&!/6\s*mm/i.test(r.remark||'')) add(r.site,lbRowCost(kind,r)||0); });
   else if(kind==='jcb'||kind==='roller') (S.machineLogs||[]).forEach(function(l){ if(l.offsite||!(+l.hours>0)) return; var m=MACH(l.machine)||{}; if((m.cat||l.mtype)!==kind||/dubey/i.test(m.name||'')) return;
-    add(l.site==='site-barela'||/barela/i.test(l.work||'')?'Barela':'Bypass', kind==='roller'?1:(+l.hours)); });
+    add(l.site==='site-barela'?'Barela':'Bypass', kind==='roller'?1:(+l.hours)); });
   var t=by.Bypass+by.Barela; return t?{Bypass:by.Bypass/t,Barela:by.Barela/t}:{Bypass:1,Barela:0};
 }
 /* Cash Book payment to a supplier → split between the sites the same way as that supplier's deliveries
@@ -1764,6 +1764,12 @@ function unbRow(t,v,n,act){
 <script>
 /* ================= MACHINE LOG (JCB / EARTHMOVING) ================= */
 /* Hire cost from the machine log: hour machines = hours × rate on that date; day machines (roller) = days worked × day rate */
+function mlogSetSite(id,site){
+  var l=(S.machineLogs||[]).find(function(x){return x.id===id;}); if(!l||l.site===site) return;
+  var old=l.site; l.site=site;
+  logAudit('U','Machine log',dmy(l.date),(MACH(l.machine)||{}).name+' site '+sname(old)+' → '+sname(site)); save(); render();
+  toast('✅ '+dmy(l.date)+' → '+(site==='site-barela'?'Barela':'Bypass'));
+}
 function mlogCost(rows){
   var by={}, amt=0, noRate=0;
   rows.forEach(function(l){
@@ -1815,7 +1821,7 @@ function P_mlog(){
   '</div>';
   /* ── hours run (घंटे) and cost at each site ── */
   h+=(function(){
-    var isBl=function(l){ return l.site==='site-barela'||/barela/i.test(l.work||''); };
+    var isBl=function(l){ return l.site==='site-barela'; };
     var one=function(list,name,cls){
       var run=list.filter(function(l){ return !l.offsite&&(+l.hours>0); });
       var hrs=R2(run.reduce(function(s,l){ return s+(+l.hours||0); },0));
@@ -1893,7 +1899,10 @@ function P_mlog(){
       return '<span class="mono"'+( isNewDate?'':' style="color:var(--muted)"')+'>'+dmy(r.date)+'</span>'+(isNewDate?badge:'')+dupBadge;
     }},
     {l:'Machine',f:function(r){var m=MACH(r.machine)||{}; return (r.mtype==='roller'?'🛞 ':'🚜 ')+'<b>'+esc(m.code||'—')+'</b>';}},
-    {l:'Site',f:function(r){return esc(scode(r.site));}},
+    {l:'Site',f:function(r){ var bl=r.site==='site-barela';
+      if(r.billed||r.offsite) return '<span class="pill '+(bl?'g':'s')+'">'+(bl?'Barela':'Bypass')+'</span>';
+      return '<select class="lb-sel" style="font-weight:600;color:'+(bl?'var(--good)':'inherit')+'" onclick="event.stopPropagation()" onchange="mlogSetSite(\''+r.id+'\',this.value)">'+
+        '<option value="site-bypass"'+(bl?'':' selected')+'>Bypass</option><option value="site-barela"'+(bl?' selected':'')+'>Barela</option></select>'; }},
     {l:'Operator',f:function(r){return esc(normOperator(r.operator));}},
     {l:'Work executed',f:function(r){return '<div style="max-width:300px;font-size:12px">'+esc(r.work||'—')+'</div>';}},
     {l:'Hr-meter',n:1,f:function(r){return r.hmStart?'<span class="mono" style="font-size:12px">'+fmtI(r.hmStart,1)+' → '+fmtI(r.hmEnd,1)+'</span>':'—';}},
@@ -10277,7 +10286,7 @@ function lbCostTiles(reg,rows){
    Incoming Goods marked Paid were paid on the spot; everything else in the logbook is still owed until a Cash Book payment covers it.
    A supplier with vendor bills (e.g. Madan Yadav) is measured by his bills, not by the register rows, so nothing is counted twice. */
 var DUE_STOP={saliwada:1,aac:1,block:1,blocks:1,traders:1,trader:1,trades:1,ji:1,jbp:1,jabalpur:1,barela:1,bypass:1,gour:1,gor:1,and:1,sons:1,pvt:1,ltd:1,sales:1,the:1,enterprises:1,enterprise:1,infra:1,company:1,store:1,stores:1,shop:1,cash:1,cas:1,chack:1,paid:1,agst:1,against:1,online:1,product:1,products:1,petroleum:1,pump:1,jcb:1};
-function dueKey(name){ return String(name||'').toLowerCase().replace(/[^a-z ]/g,' ').split(/\s+/).filter(function(t){ return t.length>=3&&!DUE_STOP[t]; }).sort().join(' '); }
+function dueKey(name){ return String(name||'').toLowerCase().replace(/[^a-z ]/g,' ').split(/\s+/).filter(function(t,i,all){ return t.length>=3&&!DUE_STOP[t]&&all.indexOf(t)===i; }).sort().join(' '); }
 var DUE_REGS=['gitti','msand','loha','cement','adhesive','bindingwire','tmgitti','readymix','bricks','blocks','diesel'];
 var DUE_LABEL={gitti:'Gitti',msand:'M-Sand',loha:'Loha',cement:'Cement',adhesive:'Adhesive',bindingwire:'Binding wire',tmgitti:'T.M. Gitti',readymix:'Readymix',bricks:'Bricks',blocks:'AAC blocks',diesel:'Diesel',incoming:'Incoming goods (pending)',bills:'Vendor bills'};
 function duePartyName(r,reg){

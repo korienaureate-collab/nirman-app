@@ -8630,11 +8630,11 @@ var LB_SEC_ALIAS={dpr:'dpr',manpower:'dpr',labour:'dpr',labor:'dpr',worker:'dpr'
   incoming:'incoming',incominggoods:'incoming',material:'incoming',incomingmaterial:'incoming',goods:'incoming',
   msand:'msand',gitti:'gitti',hava:'hava',dumper:'dumper',loha:'loha',steel:'loha',cement:'cement',
   bindingwire:'bindingwire',readymix:'readymix',bricks:'bricks',blocks:'blocks',adhesive:'adhesive',
-  tmgitti:'tmgitti',diesel:'diesel',cash:'cash',
+  tmgitti:'tmgitti',diesel:'diesel',cash:'cash',cashbook:'cash',pc:'cash',pccontractor:'cash',pcpayment:'cash',pcpayments:'cash',pettycontractor:'cash',contractorpayment:'cash',payment:'cash',
   mlog:'mlog',machine:'mlog',machinelog:'mlog',jcb:'mlog',roller:'mlog',hourmeter:'mlog'};
 var LB_SEC_LABEL={dpr:'DPR — Manpower',murum:'Hard Murum',incoming:'Incoming Goods',msand:'M-Sand',gitti:'Gitti 20mm',
   hava:'Hava',dumper:'Dumper',loha:'Loha',cement:'Cement',bindingwire:'Binding Wire',readymix:'Readymix',bricks:'Bricks',
-  blocks:'Blocks',adhesive:'Adhesive',tmgitti:'T.M. Gitti',diesel:'Diesel',cash:'Cash Book',mlog:'Machine Log (JCB / Roller)'};
+  blocks:'Blocks',adhesive:'Adhesive',tmgitti:'T.M. Gitti',diesel:'Diesel',cash:'Cash Book / PC Contractor',mlog:'Machine Log (JCB / Roller)'};
 function lbSectionOf(it,def){
   var s=String(it.section||it.register||'').toLowerCase().replace(/[^a-z]/g,'');
   if(LB_SEC_ALIAS[s]) return LB_SEC_ALIAS[s];
@@ -8772,7 +8772,7 @@ function lbMixRender(){
           '<td style="width:132px"><input class="in mono" style="width:118px;padding:2px 5px;font-size:12px;'+(ck.ok?'':'border-color:var(--crit);color:var(--crit)')+'" value="'+dmyS(x.row.date)+'" onchange="lbMixSetDate('+i+',this.value)">'+
             dateWarnHtml(ck,"lbMixSetDate("+i+",'$D')")+'</td>'+
           '<td>'+lbMixSummary(sec,x.row)+(x.dup?' <span class="pill">already in register</span>':'')+'</td>'+
-          '<td style="width:150px"><select class="in" style="padding:2px 4px;font-size:12px" onchange="lbMixMove('+i+',this.value)">'+
+          '<td style="width:190px"><select class="in" style="padding:2px 4px;font-size:12px" onchange="lbMixMove('+i+',this.value)">'+
             Object.keys(LB_SEC_LABEL).map(function(k){return '<option value="'+k+'"'+(k===sec?' selected':'')+'>'+esc(LB_SEC_LABEL[k])+'</option>';}).join('')+
           '</select></td></tr>'; }).join('')+
       '</tbody></table></div>';

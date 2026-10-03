@@ -331,7 +331,7 @@ textarea.in{min-height:58px;resize:vertical}
   <aside id="rail">
     <div class="brand">
       <div class="mark" id="railMark">KA</div>
-      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 02-Oct 19:40</span></div>
+      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 03-Oct 19:30</span></div>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -1676,7 +1676,7 @@ function scPartyShares(){
   inc.forEach(function(r){ if(!r.lot) return; var L=lots[r.lot]||(lots[r.lot]={amt:0,n:0}); L.amt+=+r.amt||0; L.n++; });
   inc.forEach(function(r){
     if(r.lot){ var L=lots[r.lot]; if(L&&L.n) add(r.party,r.site,L.amt/L.n); return; }
-    if(!/paid/i.test(r.status||'')) add(r.party,r.site,+r.amt||0); });
+    if(!/paid/i.test(r.status||'')||r.paidBy) add(r.party,r.site,+r.amt||0); });
   return m;
 }
 function scPartyShare(name){
@@ -1717,12 +1717,15 @@ function siteCost(){
   /* logbook costs not in the accounts yet: only what is still unpaid (their Cash Book payments are already expenses above) */
   var P=dueAll(); Object.keys(P).forEach(function(k){ var p=P[k];
     if(p.byBill){ var ps={Bypass:0,Barela:0};   /* bill supplier: bills are in the vouchers above; add only their Pending goods that have no bill */
-      ((S.lb&&S.lb.incoming)||[]).forEach(function(r){ if(/paid/i.test(r.status||'')||r.billId||r.bill||r._linkedBill||r.transfer) return; var kk=dueKey(r.party); kk=DUE_ALIAS[kk]||kk; if(kk!==k) return; var c=+r.amt||0; if(c>0) ps[r.site==='Barela'?'Barela':'Bypass']+=c; });
-      ['Bypass','Barela'].forEach(function(st){ if(ps[st]) put('Goods — '+p.name+' (pending, no bill yet)',st,ps[st],ps[st]); }); return; }
+      ((S.lb&&S.lb.incoming)||[]).forEach(function(r){ if((/paid/i.test(r.status||'')&&!r.paidBy)||r.paidVia||r.billId||r.bill||r._linkedBill||r.transfer) return; if(dueRowKey(r.party)!==k) return; var c=+r.amt||0; if(c>0) ps[r.site==='Barela'?'Barela':'Bypass']+=c; });
+      /* an advance left over after their bills (e.g. Manohar ₹1,666) already pays part of these goods */
+      var usedAdv=0; (S.purchases||[]).forEach(function(b){ if(b.party===p.pid) usedAdv+=(extra[b.id]||0); });
+      var advLeft=Math.max(0,(p.adv||0)-usedAdv), tot=ps.Bypass+ps.Barela, owe=Math.max(0,tot-advLeft);
+      ['Bypass','Barela'].forEach(function(st){ if(ps[st]) put('Goods — '+p.name+' (pending, no bill yet)',st,ps[st],tot?owe*ps[st]/tot:0); }); return; }
     if(!(p.due>0.5)) return;
     var bySite={Bypass:0,Barela:0}, tot=0;
     DUE_REGS.concat(['incoming']).forEach(function(reg){ ((S.lb&&S.lb[reg])||[]).forEach(function(r){ if(dueKey(reg==='incoming'?r.party:duePartyName(r,reg))!==k) return;
-      if(reg==='incoming'&&(/paid/i.test(r.status||'')||r.billId||r.bill)) return; var c=reg==='incoming'?(+r.amt||0):(lbRowCost(reg,r)||0); if(c>0){ bySite[r.site==='Barela'?'Barela':'Bypass']+=c; tot+=c; } }); });
+      if(reg==='incoming'&&((/paid/i.test(r.status||'')&&!r.paidBy)||r.paidVia||r.transfer||r.billId||r.bill)) return; var c=reg==='incoming'?(+r.amt||0):(lbRowCost(reg,r)||0); if(c>0){ bySite[r.site==='Barela'?'Barela':'Bypass']+=c; tot+=c; } }); });
     var label=Object.keys(p.parts).map(function(x){ return DUE_LABEL[x]||x; }).join(', ').replace('Incoming goods (pending)','Goods')+' — '+p.name+' (not in accounts yet)';
     ['Bypass','Barela'].forEach(function(st){ if(bySite[st]) put(label,st,p.due*bySite[st]/tot,p.due*bySite[st]/tot); });
   });
@@ -9047,6 +9050,7 @@ function cashFindParty(r){
     return q&&(q===n||(n.length>=5&&q.indexOf(n)===0)||(q.length>=5&&n.indexOf(q)===0)); })||null;
 }
 function cashHeadFor(r){
+  if(r&&r.head&&acc(r.head)) return r.head;   /* the row says which expense head it is (e.g. material bought with a cheque written under another name) */
   var t=cashRowText(r), c=null;
   for(var i=0;i<CASH_RULES.length;i++){ if(t.indexOf(CASH_RULES[i][0])>=0){ c=CASH_RULES[i][1]; break; } }
   c=c||'5901'; if(!acc(c)) c=acc('5901')?'5901':(S.coa.find(function(a){return a.cls==='EXP'||a.cls==='COGS';})||{}).code||'5901';
@@ -9067,7 +9071,7 @@ function cashLinesFor(r,skipVch){
     var ac=p.ac||'2101';
     (S.purchases||[]).filter(function(b){return b.party===p.id&&R2((+b.net||0)-(+b.paid||0))>0.5;}).sort(function(a,b){return a.date<b.date?-1:1;}).forEach(function(b){
       if(left<=0) return; var due=R2((+b.net||0)-(+b.paid||0)), x=R2(Math.min(due,left)); lines.push({ac:ac,dr:x,cr:0,note:b.no}); left=R2(left-x); });
-    if(left>0&&!r.payTo&&(lines.length||/creditor|supplier|vendor/i.test(p.type||''))){ lines.push({ac:ac,dr:left,cr:0,note:'Advance — '+p.name}); left=0; }   /* with payTo the rest stays the payee's own work */
+    if(left>0&&!r.head&&(lines.length||/creditor|supplier|vendor/i.test(p.type||''))){   /* a row with its own expense head is a purchase, not an advance */ lines.push({ac:ac,dr:left,cr:0,note:'Advance — '+p.name}); left=0; }   /* with payTo the rest stays the payee's own work */
   }
   if(left>0) lines.push({ac:cashHeadFor(r),dr:left,cr:0,note:r.party||''});
   lines.push({ac:cash?'1102':'1103',dr:0,cr:amt,note:cash?'Cash':(r.mode||'Bank')});
@@ -10305,8 +10309,9 @@ function lbCostTiles(reg,rows){
    Owner's rule: the only payments are the ones in the Cash Book (petty cash / PC payments).
    Incoming Goods marked Paid were paid on the spot; everything else in the logbook is still owed until a Cash Book payment covers it.
    A supplier with vendor bills (e.g. Madan Yadav) is measured by his bills, not by the register rows, so nothing is counted twice. */
-var DUE_STOP={saliwada:1,aac:1,block:1,blocks:1,traders:1,trader:1,trades:1,ji:1,jbp:1,jabalpur:1,barela:1,bypass:1,gour:1,gor:1,and:1,sons:1,pvt:1,ltd:1,sales:1,the:1,enterprises:1,enterprise:1,infra:1,company:1,store:1,stores:1,shop:1,cash:1,cas:1,chack:1,paid:1,agst:1,against:1,online:1,product:1,products:1,petroleum:1,pump:1,jcb:1};
-function dueKey(name){ return String(name||'').toLowerCase().replace(/[^a-z ]/g,' ').split(/\s+/).filter(function(t,i,all){ return t.length>=3&&!DUE_STOP[t]&&all.indexOf(t)===i; }).sort().join(' '); }
+var DUE_STOP={hdfc:1,saliwada:1,aac:1,block:1,blocks:1,traders:1,trader:1,trades:1,ji:1,jbp:1,jabalpur:1,barela:1,bypass:1,gour:1,gor:1,and:1,sons:1,pvt:1,ltd:1,sales:1,the:1,enterprises:1,enterprise:1,infra:1,company:1,store:1,stores:1,shop:1,cash:1,cas:1,chack:1,paid:1,agst:1,against:1,online:1,product:1,products:1,petroleum:1,pump:1,jcb:1};
+var DUE_SAME={bakil:'vakil'};   /* the same name spelt two ways on paper */
+function dueKey(name){ return String(name||'').toLowerCase().replace(/[^a-z ]/g,' ').split(/\s+/).map(function(t){ return DUE_SAME[t]||t; }).filter(function(t,i,all){ return t.length>=3&&!DUE_STOP[t]&&all.indexOf(t)===i; }).sort().join(' '); }
 var DUE_REGS=['gitti','msand','loha','cement','adhesive','bindingwire','tmgitti','readymix','bricks','blocks','diesel'];
 var DUE_LABEL={gitti:'Gitti',msand:'M-Sand',loha:'Loha',cement:'Cement',adhesive:'Adhesive',bindingwire:'Binding wire',tmgitti:'T.M. Gitti',readymix:'Readymix',bricks:'Bricks',blocks:'AAC blocks',diesel:'Diesel',incoming:'Incoming goods (pending)',bills:'Vendor bills',after:'After his account — not billed yet'};
 function duePartyName(r,reg){
@@ -10317,6 +10322,12 @@ function duePartyName(r,reg){
   return p;
 }
 var DUE_ALIAS={};
+/* the "Paid & due" key of a supplier name: a supplier with bills by exact name, else the shortened name */
+function dueRowKey(name){
+  var nm=String(name||'').trim().toLowerCase(), bp=nm&&(S.parties||[]).find(function(x){ return String(x.name||'').trim().toLowerCase()===nm; });
+  if(bp&&(S.purchases||[]).some(function(b){ return b.party===bp.id; })) return 'id:'+bp.id;
+  var k=dueKey(name); return (DUE_ALIAS&&DUE_ALIAS[k])||k;
+}
 /* Work done after a supplier's account was made (bill field "covers": the last date each item is billed to),
    e.g. Madan's account counts murum to 11/9 and JCB to 31/8 — later trips and hours are still owed but not billed yet. */
 var AFTER_ITEM={murum:'Hard Murum',jcb:'JCB',roller:'Road roller'};
@@ -10333,7 +10344,11 @@ function afterBillWork(){
 }
 function dueAll(){
   var P={}; DUE_ALIAS={};
-  var get=function(name){ var k=dueKey(name); if(!k) return null; if(DUE_ALIAS[k]) return P[DUE_ALIAS[k]]; if(!P[k]) P[k]={key:k,name:String(name).trim(),cost:0,noPrice:0,parts:{},paid:0,payRows:0,byBill:false}; return P[k]; };
+  var get=function(name){
+    /* a supplier with bills is found by its exact name first ("Manohar Sales" ≠ "Manohar Traders", both shorten to "manohar") */
+    var nm=String(name||'').trim().toLowerCase(), bp=nm&&(S.parties||[]).find(function(x){ return String(x.name||'').trim().toLowerCase()===nm; });
+    if(bp&&P['id:'+bp.id]) return P['id:'+bp.id];
+    var k=dueKey(name); if(!k) return null; if(DUE_ALIAS[k]) return P[DUE_ALIAS[k]]; if(!P[k]) P[k]={key:k,name:String(name).trim(),cost:0,noPrice:0,parts:{},paid:0,payRows:0,byBill:false}; return P[k]; };
   /* suppliers with vendor bills (kept apart by party, so "Manohar Sales" ≠ "Manohar Traders"): their bills are the cost, their bill payments the paid amount */
   (S.purchases||[]).forEach(function(b){ var pt=P_(b.party); if(!pt) return; var id='id:'+pt.id;
     if(!P[id]) P[id]={key:id,name:pt.name,cost:0,noPrice:0,parts:{},paid:0,payRows:0,byBill:true,pid:pt.id};
@@ -10345,9 +10360,14 @@ function dueAll(){
     var nt=String(l.note).toLowerCase(); Object.keys(P).forEach(function(k){ var p=P[k]; if(p.byBill&&p.name&&nt.indexOf(String(p.name).toLowerCase())>=0){ p.paid+=+l.dr; p.adv=(p.adv||0)+(+l.dr); } }); }); });
   DUE_REGS.forEach(function(reg){ ((S.lb&&S.lb[reg])||[]).forEach(function(r){ var p=get(duePartyName(r,reg)); if(!p||p.byBill) return;
     var c=lbRowCost(reg,r); if(c===null){ p.noPrice++; return; } if(!c) return; p.cost+=c; p.parts[reg]=(p.parts[reg]||0)+c; }); });
-  ((S.lb&&S.lb.incoming)||[]).forEach(function(r){ if(/paid/i.test(r.status||'')||r.transfer||(r.lot&&!(+r.amt))||r.billId||r.bill||r._linkedBill) return; var p=get(r.party); if(!p) return;   /* a lot counts once, on the row that carries its total */
+  ((S.lb&&S.lb.incoming)||[]).forEach(function(r){ if((/paid/i.test(r.status||'')&&!r.paidBy)||r.paidVia||r.transfer||(r.lot&&!(+r.amt))||r.billId||r.bill||r._linkedBill) return; var p=get(r.party); if(!p) return;   /* a lot counts once, on the row that carries its total */
     var c=+r.amt||0; if(!c){ p.noPrice++; return; } p.cost+=c; p.parts.incoming=(p.parts.incoming||0)+c; });
-  ((S.lb&&S.lb.cash)||[]).forEach(function(r){ if(!/paid/i.test(r.status||'')) return; var k=dueKey(r.payTo||r.party); var p=P[DUE_ALIAS[k]||k]; if(!p||p.byBill) return; p.paid+=+r.amt||0; p.payRows++; });
+  var credit=function(name,a){ var k=dueKey(name); var p=P[DUE_ALIAS[k]||k]; if(!p||p.byBill||!(a>0)) return; p.paid+=a; p.payRows++; };
+  ((S.lb&&S.lb.cash)||[]).forEach(function(r){ if(!/paid/i.test(r.status||'')) return; var amt=+r.amt||0;
+    if(r.payTo){ var pp=cashFindParty({party:r.payTo}), v=r.vch&&(S.vouchers||[]).find(function(x){ return x.no===r.vch; }), toP=amt;
+      if(pp&&v) toP=R2((v.lines||[]).filter(function(l){ return l.ac===(pp.ac||'2101')&&+l.dr>0; }).reduce(function(s,l){ return s+(+l.dr); },0));
+      credit(r.payTo,toP); credit(r.party,R2(amt-toP)); }   /* e.g. 9/9 ₹39,500: ₹19,250 Aditya's bill, ₹20,250 Radhika */
+    else credit(r.party,amt); });
   Object.keys(P).forEach(function(k){ var p=P[k]; p.cost=R2(p.cost); p.paid=R2(p.paid); p.due=R2(p.cost-p.paid); if(!p.cost&&!p.noPrice) delete P[k]; });
   return P;
 }
@@ -11022,8 +11042,10 @@ function clInit(){
 function clWelcome(){
   var box=document.getElementById('clMsgs'); if(!box) return; box.innerHTML='';
   if(!clReady()){
-    clAdd('<b>Connect Claude once.</b> Paste your Claude API key (starts with <code>sk-ant-</code>). It is saved only in this browser — not in the file, not in backups.<br>'+
-      '<div style="display:flex;gap:6px;margin-top:8px"><input id="clKey" class="in" type="password" placeholder="sk-ant-…" style="flex:1;font-family:var(--mono)"><button class="btn pri" onclick="clSaveKey()">Save</button></div>','a');
+    clAdd('<b>No key needed.</b> Type your question below (or what needs fixing) and press <b>Send</b> — Claude opens in a new tab with your question and the Nirman Ledger rules filled in. '+
+      'Attach photos there. If your Nirman Ledger connector is on in Claude, it can read your registers and send entries to the 📥 AI Inbox for your approval.','a');
+    clAdd('<details><summary class="hint" style="cursor:pointer">Advanced: answer inside the app with an API key</summary><b>Connect Claude once.</b> Paste your Claude API key (starts with <code>sk-ant-</code>). It is saved only in this browser — not in the file, not in backups.<br>'+
+      '<div style="display:flex;gap:6px;margin-top:8px"><input id="clKey" class="in" type="password" placeholder="sk-ant-…" style="flex:1;font-family:var(--mono)"><button class="btn pri" onclick="clSaveKey()">Save</button></div></details>','a');
     return;
   }
   clAdd('Hi! Give me the information — a photo of a register page, a bill, or just type it — and I will put it in the books.'+
@@ -11051,7 +11073,8 @@ function clPick(inp){
   inp.value='';
 }
 function clImgsShow(){ document.getElementById('clImgs').innerHTML=CL.imgs.map(function(x,i){ return x.type==='image'?'<img src="data:image/jpeg;base64,'+x.source.data+'" title="click to remove" onclick="CL.imgs.splice('+i+',1);clImgsShow()">':'<span class="pill" onclick="CL.imgs.splice('+i+',1);clImgsShow()">PDF ✕</span>'; }).join(''); }
-function clSendBox(){ var t=document.getElementById('clTxt'); var v=(t.value||'').trim(); if(!v&&!CL.imgs.length) return; t.value=''; clSend(v||'Read this and tell me what it is. Check it against the books and propose what to add.'); }
+function clSendBox(){ var t=document.getElementById('clTxt'); var v=(t.value||'').trim(); if(!v&&!CL.imgs.length) return; t.value='';
+  if(!clReady()){ clAskClaudeAi(v||'Read the photo I attach and tell me what to add to the books.'); return; } clSend(v||'Read this and tell me what it is. Check it against the books and propose what to add.'); }
 function clAsk(label,input){
   return new Promise(function(res){
     if(CL.approveAll){ res(true); return; }
@@ -11590,16 +11613,15 @@ var DC_CLAUDE_SYSTEM='You are a careful Indian chartered accountant who also kno
   'Answer in simple English a site office can follow, at most 8 short lines: 1) your verdict, 2) why, 3) exactly what to do in the app, 4) what to check on the paper if unsure. Never invent numbers.';
 async function dcAsk(i){
   var f=(window._dcShown||[])[i]; if(!f) return;
-  if(!AIS.claudeKey){ modal('Ask Claude','<p>To get Claude\'s opinion, add your Claude key once in <b>AI Record Scanner</b>. It stays in this browser only.</p>',
-    '<button class="btn" onclick="closeModal()">Close</button><button class="btn pri" onclick="closeModal();go(\'aiscan\')">Open AI Record Scanner</button>'); return; }
+  if(!AIS.claudeKey){ dcAskClaudeAi(f); return; }   /* no key in this browser → claude.ai opens with the question ready */
   modal('Claude is checking…','<p class="hint">'+esc(f.title)+'</p><p>Reading the evidence…</p>','<button class="btn" onclick="closeModal()">Close</button>');
   var ev=f.ev?[f.ev.cols.join(' | ')].concat(f.ev.rows.map(function(r){ return r.map(function(c){ return String(c).replace(/<[^>]+>/g,''); }).join(' | '); })).join('\n'):'';
   var txt='Finding: '+f.title+'\nType: '+DC_SEV[f.sev].t+' ('+f.area+')\nWhat the check saw: '+f.why+'\n\nEvidence:\n'+ev+
     '\n\nButtons available in the app for this finding: '+f.acts.map(function(a){return '"'+a.l+'"';}).concat(['"Not a problem"']).join(', ')+'\nToday: '+dmy(today());
   try{ var ans=await claudeCall([{text:txt}],900,DC_CLAUDE_SYSTEM);
     modal('Claude\'s opinion','<p class="hint" style="margin-top:0">'+esc(f.title)+'</p><div style="white-space:pre-wrap;line-height:1.55">'+esc(ans)+'</div>',
-      '<button class="btn pri" onclick="closeModal()">Close</button>');
-  }catch(e){ modal('Ask Claude','<p style="color:var(--crit)">Claude could not answer: '+esc(e.message)+'</p>','<button class="btn" onclick="closeModal()">Close</button>'); }
+      '<button class="btn" onclick="dcAskOpen('+i+')">Open in Claude ↗</button><button class="btn pri" onclick="closeModal()">Close</button>');
+  }catch(e){ closeModal(); dcAskClaudeAi(f); }
 }
 
 /* ── the page ── */
@@ -13157,6 +13179,297 @@ function backupExcel(){
 }
 </script>
 <script>if(window.NL_CLOUD_CONFIG){ var _cs=document.createElement('script'); _cs.type='module'; _cs.src='cloud.js?v=3'; document.body.appendChild(_cs); }</script>
+
+<script>
+/* ═══════════ ASK CLAUDE WITHOUT A KEY ═══════════
+   No Claude key in this browser (the normal case — the key must never be typed into the website):
+   "Ask Claude" opens claude.ai in a new tab with the whole question ready — what the app found, the
+   evidence, the buttons the app offers — and the Nirman Ledger context. The same text is copied, so if
+   the box is empty you just paste (Ctrl+V). Your Claude Pro chat (with the Nirman Ledger connector) then
+   explains it and, if entries are missing, can send them to the AI Inbox for your approval.            */
+var NL_CONTEXT='I use my construction ledger app "Nirman Ledger" (Korien Aureate, Jabalpur — sites Bypass and Barela, FY 2026-27). '+
+  'Rules of my books: only payments in the Cash Book (petty cash / PC) count as paid; Incoming Goods without a Cash Book payment are NOT paid; '+
+  'JCB/roller hours = meter closing − opening; JCB ₹1,000/h until 15/5/2026 and ₹1,100/h from 16/5/2026. '+
+  'If my "Nirman Ledger" connector is available, use nirman_recent to look at the related registers before you answer; if entries are missing, send them with nirman_add_entries to my AI Inbox (I approve them in the app). Never invent numbers.';
+function nlOpenClaude(text){
+  var t=String(text||''); if(t.length>6500) t=t.slice(0,6500)+'\n…(cut — the rest is copied, paste it if needed)';
+  try{ var pr=navigator.clipboard.writeText(String(text||'')); if(pr&&pr.catch) pr.catch(function(){}); }catch(e){}
+  var w=window.open('https://claude.ai/new?q='+encodeURIComponent(t),'_blank');
+  if(!w) modal('Open Claude','<p>Your browser blocked the new tab. The question is copied — open <a href="https://claude.ai/new" target="_blank" rel="noopener">claude.ai</a> and paste it (Ctrl+V).</p>','<button class="btn pri" onclick="closeModal()">OK</button>');
+  else toast('Claude opened in a new tab — the question is filled in (also copied: paste with Ctrl+V if the box is empty)');
+}
+function dcFindingText(f){
+  var ev=f.ev?[f.ev.cols.join(' | ')].concat(f.ev.rows.slice(0,40).map(function(r){ return r.map(function(c){ return String(c).replace(/<[^>]+>/g,''); }).join(' | '); })).join('\n'):'';
+  if(f.ev&&f.ev.rows.length>40) ev+='\n… and '+(f.ev.rows.length-40)+' more rows';
+  return 'Finding: '+f.title+'\nType: '+((typeof DC_SEV!=='undefined'&&DC_SEV[f.sev])?DC_SEV[f.sev].t:f.sev)+' ('+f.area+')\nWhat the check saw: '+String(f.why||'').replace(/<[^>]+>/g,'')+
+    '\n\nEvidence:\n'+ev+'\n\nButtons the app offers for this finding: '+(f.acts||[]).map(function(a){return '"'+a.l+'"';}).concat(['"Not a problem"']).join(', ')+'\nToday: '+dmy(today());
+}
+function dcAskClaudeAi(f){
+  var q=NL_CONTEXT+'\n\nThe app\'s Deep Check found the problem below. Help me fix it. Answer in simple English a site office can follow: '+
+    '1) your verdict — a real mistake, the same paper entered twice, or fine; 2) why; 3) exactly what to change or which button to press in the app; 4) what to check on the paper if unsure.\n\n'+dcFindingText(f);
+  nlOpenClaude(q);
+}
+function dcAskOpen(i){ var f=(window._dcShown||[])[i]; if(f) dcAskClaudeAi(f); }
+/* the in-app Claude panel without a key: send the question to claude.ai instead */
+function clAskClaudeAi(text){
+  var q=NL_CONTEXT+'\n\nMy question'+(CL.imgs&&CL.imgs.length?' (I will attach the photo here)':'')+':\n'+(text||'');
+  nlOpenClaude(q); CL.imgs=[]; var im=document.getElementById('clImgs'); if(im) im.innerHTML='';
+}
+</script>
+<script>
+/* ═══════════════════ SEARCH EVERYTHING ═══════════════════
+   One box (top bar, or press "/" or Ctrl+K) finds any bill, payment, Cash Book row, register row,
+   machine log or supplier — by name, bill number, item, amount or date. Spelling can be a little off
+   ("vijay mahel" still finds "Vijay Mahal"). Click a result to open it; register rows are opened on
+   their page and flashed yellow.                                                                      */
+var GS={q:'',type:'all',status:'any',site:'any',from:'',to:'',timer:null,sel:-1,quick:[]};
+var GS_LB_NAME={murum:'Hard Murum',gitti:'Gitti 20mm',msand:'M-Sand',hava:'Hava',dumper:'Dumper',loha:'Loha (Iron)',cement:'Cement',
+  bindingwire:'Binding Wire',readymix:'Readymix',bricks:'Bricks',blocks:'Blocks (AAC)',adhesive:'Adhesive',tmgitti:'T.M. Gitti',
+  diesel:'Diesel',incoming:'Incoming Goods',cash:'Cash Book',dpr:'DPR — Manpower'};
+var GS_TYPES=[['all','All'],['bill','🧾 Bills'],['cash','💵 Cash Book'],['goods','📦 Goods & registers'],['vch','📒 Vouchers'],['machine','🚜 Machines'],['party','👤 Suppliers']];
+
+function gsNorm(s){ return String(s==null?'':s).toLowerCase().replace(/[₹,]/g,'').replace(/[^a-z0-9\u0900-\u097f.\/]+/g,' ').replace(/\s+/g,' ').trim(); }
+function gsLev(a,b,max){ if(Math.abs(a.length-b.length)>max) return max+1; var p=[],i,j; for(j=0;j<=b.length;j++) p[j]=j;
+  for(i=1;i<=a.length;i++){ var c=[i],mn=i; for(j=1;j<=b.length;j++){ c[j]=Math.min(p[j]+1,c[j-1]+1,p[j-1]+(a[i-1]===b[j-1]?0:1)); if(c[j]<mn) mn=c[j]; } if(mn>max) return max+1; p=c; } return p[b.length]; }
+/* every word of the search must be found (exact part of the text, the text without spaces, or — in fuzzy mode — a word one or two letters off) */
+function gsMatch(hay,toks,fuzzy){
+  var flat=hay.replace(/ /g,''), words=fuzzy?hay.split(' '):null, score=0;
+  for(var i=0;i<toks.length;i++){ var t=toks[i];
+    if(/^\d+$/.test(t)){ if(new RegExp('(^|[^0-9])'+t+'([^0-9]|$)').test(hay)){ score+=3; continue; } return 0; }   /* numbers match whole: 15000 ≠ 150000 */
+    if(hay.indexOf(t)>=0){ score+=(new RegExp('(^| )'+t.replace(/[.*+?^${}()|[\]\\\/]/g,'\\$&')).test(hay))?3:2; continue; }
+    if(t.length>=3&&flat.indexOf(t)>=0){ score+=1; continue; }
+    if(fuzzy&&t.length>=4&&!/^\d+$/.test(t)){ var mx=t.length>=7?2:1, ok=false;
+      for(var w=0;w<words.length&&!ok;w++){ var wd=words[w]; if(wd.length<3) continue; if(gsLev(t,wd.slice(0,t.length+1),mx)<=mx||gsLev(t,wd,mx)<=mx) ok=true; }
+      if(ok){ score+=1; continue; } }
+    return 0; }
+  return score;
+}
+function gsSiteName(s){ s=String(s||''); if(/barela|brela|berala/i.test(s)) return 'Barela'; if(/bypass/i.test(s)) return 'Bypass';
+  if(s&&typeof scode==='function'){ try{ var c=scode(s); if(/barela/i.test(c)) return 'Barela'; if(/bypass/i.test(c)) return 'Bypass'; return c||''; }catch(e){} } return ''; }
+function gsAmt(x){ return '₹'+(Math.round((+x||0)*100)/100).toLocaleString('en-IN',{maximumFractionDigits:2}); }
+function gsDateWords(d){ if(!d) return ''; var m=String(d).match(/^(\d{4})-(\d{2})-(\d{2})/); if(!m) return String(d);
+  var mon=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'][+m[2]-1]||'';
+  return d+' '+m[3]+'/'+m[2]+'/'+m[1]+' '+(+m[3])+'/'+(+m[2])+' '+(+m[3])+'/'+(+m[2])+'/'+m[1].slice(2)+' '+mon+' '+(+m[3])+' '+mon; }
+function gsPartyName(id){ try{ var p=(S.parties||[]).find(function(x){return x.id===id;}); return p?p.name:''; }catch(e){ return ''; } }
+function gsAcName(ac){ try{ return typeof accName==='function'?accName(ac):''; }catch(e){ return ''; } }
+
+/* build the list of everything that can be found (fresh each search — the books change) */
+function gsIndex(){
+  var out=[];
+  (S.purchases||[]).forEach(function(b){
+    var pn=gsPartyName(b.party), due=Math.round(((+b.net||0)-(+b.paid||0))*100)/100;
+    var items=(b.aiLines||[]).map(function(l){ return l.item+(l.qty?' '+l.qty:'')+(l.rate?'×'+l.rate:''); }).join(', ');
+    out.push({t:'bill',ic:'🧾',date:b.date,title:pn||'Bill',no:b.no,ref:b.vendorRef,
+      sub:(b.vendorRef?'Bill #'+b.vendorRef+' · ':'')+(items||b.narration||b.kind||''),amt:+b.net||0,
+      st:due<=0.5?'Paid':(+b.paid>0.5?'Part paid — '+gsAmt(due)+' due':'Not paid'),paid:due<=0.5?'paid':'unpaid',site:gsSiteName(b.site),
+      hay:[pn,b.no,b.vendorRef,'bill '+(b.vendorRef||''),'#'+(b.vendorRef||''),b.narration,b.kind,items,Math.round(+b.net||0),gsDateWords(b.date)].join(' '),
+      open:"viewDoc('purch','"+b.id+"')",party:pn});
+  });
+  (S.vouchers||[]).forEach(function(v){
+    if(v.type==='PB') return;   /* the bill itself is listed above */
+    var amt=+v.amount||(v.lines||[]).reduce(function(s,l){return s+(+l.dr||0);},0);
+    var notes=(v.lines||[]).map(function(l){ return (l.note||'')+' '+gsAcName(l.ac); }).join(' ');
+    var pn=gsPartyName(v.party);
+    out.push({t:'vch',ic:'📒',date:v.date,title:(pn||v.narration||'Voucher'),no:v.no,sub:v.narration||'',amt:amt,st:({PV:'Payment',CV:'Cash payment',RV:'Receipt',JV:'Journal',SI:'Sale'})[v.type]||v.type,
+      paid:'',site:gsSiteName(v.site),hay:[pn,v.no,v.narration,notes,Math.round(amt),gsDateWords(v.date)].join(' '),open:"viewVch('"+v.id+"')",party:pn});
+  });
+  var lb=S.lb||{};
+  Object.keys(lb).forEach(function(reg){ var rows=lb[reg]; if(!Array.isArray(rows)) return;
+    rows.forEach(function(r,idx){ if(!r||typeof r!=='object') return;
+      var name=r.payTo||r.party||'', amt=0;
+      if(reg==='cash') amt=+r.amt||0;
+      else if(reg==='incoming') amt=+r.amt||0;
+      else { try{ amt=(typeof lbRowCost==='function'?lbRowCost(reg,r):0)||+r.amount||+r.amt||0; }catch(e){ amt=+r.amount||+r.amt||0; } }
+      var qty=r.qty!=null&&r.qty!==''?String(r.qty)+(r.unit?' '+r.unit:''):(r.trips!=null?r.trips+' trips':'');
+      var isCash=reg==='cash', st=r.status||'';
+      if(!isCash&&reg!=='incoming'&&!st) st='';
+      var t=isCash?'cash':'goods';
+      out.push({t:t,ic:isCash?'💵':'📦',date:r.date,
+        title:isCash?(name||'Payment'):((r.item||GS_LB_NAME[reg]||reg)+(name?' — '+name:'')),
+        no:isCash?(r.vch||'Cash Book'):(GS_LB_NAME[reg]||reg),
+        sub:[qty,r.size,r.rate?'@ '+r.rate:'',isCash&&r.party&&r.payTo&&r.party!==r.payTo?'for '+r.party:'',r.mode,r.remark].filter(Boolean).join(' · '),
+        amt:amt,st:isCash?(st||'Paid'):(st||''),paid:isCash?'paid':(/paid/i.test(st)&&!/not|part|un/i.test(st)?'paid':(reg==='incoming'?'unpaid':'')),
+        site:gsSiteName(r.site),reg:reg,idx:idx,
+        hay:[name,r.party,r.payTo,r.item,r.remark,r.size,r.mode,r.vch,r.head,qty,GS_LB_NAME[reg],reg,Math.round(amt),r.amt,r.rate,st,gsDateWords(r.date)].join(' '),
+        open:"gsOpenRow('"+reg+"',"+idx+")",party:name});
+    });
+  });
+  (S.machineLogs||[]).forEach(function(l){
+    var m=(S.machines||[]).find(function(x){return x.id===l.machine||x.id===l.mid;})||{};
+    var mn=m.name||m.code||l.mtype||'Machine';
+    out.push({t:'machine',ic:'🚜',date:l.date,title:mn,no:(l.hours!=null?l.hours+' h':''),sub:[l.hmStart!=null?'meter '+l.hmStart+' → '+l.hmEnd:'',l.work,l.operator,l.remark].filter(Boolean).join(' · '),
+      amt:0,st:l.billed?'Billed':'',paid:'',site:gsSiteName(l.site),hay:[mn,m.owner,l.work,l.operator,l.remark,l.mtype,'jcb roller machine',gsDateWords(l.date)].join(' '),
+      open:"go('mlog')",party:mn});
+  });
+  (S.parties||[]).forEach(function(p){
+    out.push({t:'party',ic:'👤',date:'',title:p.name,no:p.type||'',sub:[p.gstin||'No GSTIN',p.phone,p.addr,p.cat].filter(Boolean).join(' · '),amt:0,st:'',paid:'',site:'',
+      hay:[p.name,p.gstin,p.phone,p.addr,p.cat,p.type].join(' '),open:"gsSearchParty("+JSON.stringify(p.name)+")",party:p.name});
+  });
+  out.forEach(function(x){ x.h=gsNorm(x.hay); });
+  return out;
+}
+function gsFind(q,opts){
+  opts=opts||{}; var toks=gsNorm(q).split(' ').filter(Boolean); if(!toks.length) return {res:[],fuzzy:false};
+  var idx=gsIndex(), res=[], fuzzy=false;
+  var pass=function(fz){ var r=[]; idx.forEach(function(x){ var s=gsMatch(x.h,toks,fz); if(s){ x.score=s+(gsNorm(x.title).indexOf(toks.join(' '))>=0?5:0); r.push(x); } }); return r; };
+  res=pass(false); if(!res.length){ res=pass(true); fuzzy=res.length>0; }
+  if(!res.length&&toks.length>1){   /* still nothing: show rows that match the longer words (e.g. "vijay mahal" → "Nursery Vision Mahal") */
+    var big=toks.filter(function(t){ return t.length>=4; });
+    if(big.length){ idx.forEach(function(x){ var s=0; big.forEach(function(t){ s+=gsMatch(x.h,[t],true); }); if(s){ x.score=s; res.push(x); } }); fuzzy=res.length>0?'part':false; } }
+  res.sort(function(a,b){ return (b.score-a.score)||String(b.date||'').localeCompare(String(a.date||'')); });
+  return {res:res,fuzzy:fuzzy};
+}
+function gsFilter(res){
+  return res.filter(function(x){
+    if(GS.type!=='all'&&x.t!==GS.type) return false;
+    if(GS.status==='paid'&&x.paid!=='paid') return false;
+    if(GS.status==='unpaid'&&x.paid!=='unpaid') return false;
+    if(GS.site!=='any'&&x.site&&x.site!==GS.site) return false;
+    if(GS.site!=='any'&&!x.site&&x.t!=='party') return false;
+    if(GS.from&&x.date&&x.date<GS.from) return false;
+    if(GS.to&&x.date&&x.date>GS.to) return false;
+    return true; });
+}
+function gsDmy(d){ try{ return d?dmyS(d):''; }catch(e){ return d||''; } }
+function gsStPill(x){ if(!x.st) return ''; var c=/^paid$/i.test(x.st)||x.st==='Billed'?'g':(/not paid|pending|unpaid/i.test(x.st)?'c':(/part/i.test(x.st)?'w':'s'));
+  return '<span class="pill '+c+'">'+esc(x.st)+'</span>'; }
+function gsMark(text,q){ var s=esc(text||''); var toks=gsNorm(q).split(' ').filter(function(t){return t.length>=2;}); if(!toks.length) return s;
+  toks.sort(function(a,b){return b.length-a.length;});
+  try{ return s.replace(new RegExp('('+toks.map(function(t){return t.replace(/[.*+?^${}()|[\]\\\/]/g,'\\$&');}).join('|')+')','gi'),'<mark>$1</mark>'); }catch(e){ return s; } }
+
+/* ---- quick box in the top bar ---- */
+function gsQuickInput(v){ GS.q=v; clearTimeout(GS.timer); GS.timer=setTimeout(gsQuickShow,120); }
+function gsQuickShow(){
+  var box=document.getElementById('gsDrop'); if(!box) return;
+  var q=(document.getElementById('gsBox')||{}).value||''; GS.q=q;
+  if(gsNorm(q).length<2){ box.style.display='none'; GS.quick=[]; return; }
+  var f=gsFind(q), r=f.res; GS.quick=r.slice(0,8); GS.sel=-1;
+  var h=f.fuzzy?'<div class="gsHint">'+(f.fuzzy==='part'?'No exact match — showing results with some of your words':'No exact match — showing close spellings')+'</div>':'';
+  if(!r.length) h='<div class="gsHint">Nothing found for “'+esc(q)+'”. Try fewer words, a bill number or an amount.</div>';
+  h+=GS.quick.map(function(x,i){ return '<button class="gsItem" data-i="'+i+'" onmousedown="event.preventDefault()" onclick="gsQuickPick('+i+')">'+
+    '<span class="gsIc">'+x.ic+'</span><span class="gsMain"><b>'+gsMark(x.title,q)+'</b> <span class="hint">'+esc(x.no||'')+'</span>'+
+    '<span class="gsSub">'+[gsDmy(x.date),x.site].filter(Boolean).join(' · ')+(x.sub?' · '+gsMark(x.sub.slice(0,110),q):'')+'</span></span>'+
+    '<span class="gsR">'+(x.amt?'<b>'+gsAmt(x.amt)+'</b>':'')+gsStPill(x)+'</span></button>'; }).join('');
+  if(r.length) h+='<button class="gsAll" onmousedown="event.preventDefault()" onclick="gsOpenPage()">See all '+r.length+' results, totals &amp; filters →</button>';
+  box.innerHTML=h; box.style.display='block';
+}
+function gsQuickKey(e){
+  var box=document.getElementById('gsDrop');
+  if(e.key==='Escape'){ if(box) box.style.display='none'; e.target.blur(); return; }
+  if(e.key==='ArrowDown'||e.key==='ArrowUp'){ e.preventDefault(); if(!GS.quick.length) return;
+    GS.sel=(GS.sel+(e.key==='ArrowDown'?1:-1)+GS.quick.length)%GS.quick.length;
+    Array.from(box.querySelectorAll('.gsItem')).forEach(function(b,i){ b.classList.toggle('on',i===GS.sel); }); return; }
+  if(e.key==='Enter'){ e.preventDefault(); if(GS.sel>=0) gsQuickPick(GS.sel); else gsOpenPage(); }
+}
+function gsQuickPick(i){ var x=GS.quick[i]; if(!x) return; var box=document.getElementById('gsDrop'); if(box) box.style.display='none'; gsRun(x.open); }
+function gsRun(code){ try{ (new Function(code))(); }catch(e){ toast('Could not open: '+e.message,true); } }
+function gsOpenPage(){ var b=document.getElementById('gsBox'); if(b){ GS.q=b.value; b.blur(); } var d=document.getElementById('gsDrop'); if(d) d.style.display='none'; go('search'); setTimeout(function(){ var i=document.getElementById('gsPageBox'); if(i){ i.focus(); i.setSelectionRange(i.value.length,i.value.length); } },30); }
+function gsSearchParty(name){ GS.q=name; GS.type='all'; var b=document.getElementById('gsBox'); if(b) b.value=name; if(S.ui.page==='search') render(); else go('search'); }
+
+/* open a register row on its page and flash it */
+function gsOpenRow(reg,idx){
+  var page=reg==='cash'?'lb_cash':'lb_'+reg; if(typeof PAGES!=='undefined'&&!PAGES[page]){ toast('No page for '+reg,true); return; }
+  closeModal(); go(page);
+  var tries=0, find=function(){
+    var re=new RegExp("lb(Delete|Edit)[A-Za-z]*\\(\\s*'"+reg+"'\\s*,\\s*"+idx+"\\b"), hit=null;
+    Array.from(document.querySelectorAll('#view [onclick],#view [onchange],#view [oninput],#view [onblur]')).some(function(el){
+      var a=(el.getAttribute('onclick')||'')+(el.getAttribute('onchange')||'')+(el.getAttribute('oninput')||'')+(el.getAttribute('onblur')||'');
+      if(re.test(a)){ hit=el.closest('tr')||el; return true; } return false; });
+    if(hit){ hit.scrollIntoView({block:'center',behavior:'smooth'}); hit.classList.add('gsFlash'); setTimeout(function(){ hit.classList.remove('gsFlash'); },3500); return; }
+    if(tries===0&&S.ui.site!=='ALL'){ tries++; S.ui.site='ALL'; render(); setTimeout(find,60); return; }
+    var r=(S.lb[reg]||[])[idx]||{}; toast('Opened '+(GS_LB_NAME[reg]||reg)+' — look for '+gsDmy(r.date)+' '+(r.item||r.payTo||r.party||''));
+  };
+  setTimeout(find,60);
+}
+
+/* ---- the search page ---- */
+function P_search(){
+  var q=GS.q||'';
+  var h=pageHead('Search everything','Bills, Cash Book, Incoming Goods, every register, vouchers, machines and suppliers — type a name, bill number, item, amount or date','');
+  h+='<div class="card" style="margin-bottom:14px"><div class="body" style="display:flex;flex-direction:column;gap:10px">'+
+    '<input id="gsPageBox" class="in" style="font-size:16px;padding:10px 12px" placeholder="e.g. Vijay Mahal · 885 · cement · 15000 · 14/7 · Madan diesel" value="'+esc(q)+'" '+
+      'oninput="GS.q=this.value;clearTimeout(GS.timer);GS.timer=setTimeout(gsPageRefresh,180)" onkeydown="if(event.key===\'Enter\'){clearTimeout(GS.timer);gsPageRefresh();}">'+
+    '<div class="row" style="flex-wrap:wrap;gap:6px">'+GS_TYPES.map(function(t){ return '<button class="btn sm'+(GS.type===t[0]?' pri':'')+'" onclick="GS.type=\''+t[0]+'\';gsPageRefresh(1)">'+t[1]+'</button>'; }).join('')+'</div>'+
+    '<div class="row" style="flex-wrap:wrap;gap:8px;align-items:center">'+
+      '<select class="in" style="width:auto" onchange="GS.status=this.value;gsPageRefresh(1)">'+[['any','Paid or not'],['paid','Only paid'],['unpaid','Only not paid']].map(function(o){return '<option value="'+o[0]+'"'+(GS.status===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('')+'</select>'+
+      '<select class="in" style="width:auto" onchange="GS.site=this.value;gsPageRefresh(1)">'+[['any','Both sites'],['Bypass','Bypass'],['Barela','Barela']].map(function(o){return '<option value="'+o[0]+'"'+(GS.site===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('')+'</select>'+
+      '<span class="hint">From</span><input type="date" class="in" style="width:auto" value="'+esc(GS.from)+'" onchange="GS.from=this.value;gsPageRefresh(1)">'+
+      '<span class="hint">to</span><input type="date" class="in" style="width:auto" value="'+esc(GS.to)+'" onchange="GS.to=this.value;gsPageRefresh(1)">'+
+      ((GS.type!=='all'||GS.status!=='any'||GS.site!=='any'||GS.from||GS.to)?'<button class="btn sm gh" onclick="GS.type=\'all\';GS.status=\'any\';GS.site=\'any\';GS.from=\'\';GS.to=\'\';gsPageRefresh(1)">Clear filters</button>':'')+
+    '</div></div></div><div id="gsResults">'+gsResultsHtml()+'</div>';
+  return h;
+}
+function gsPageRefresh(full){ var el=document.getElementById('gsResults');
+  if(full||!el||S.ui.page!=='search'){ render(); return; }
+  el.innerHTML=gsResultsHtml(); }
+function gsResultsHtml(){
+  var q=GS.q||'';
+  if(gsNorm(q).length<2) return '<div class="empty"><b>Type at least 2 letters</b><p class="hint">Search by supplier (Vijay Mahal), bill number (885), item (cement, pipe), amount (15000), date (14/7 or jul 14), voucher (CV/19) or remark words.<br>Tip: press <b>/</b> anywhere in the app to jump to the search box.</p></div>';
+  var f=gsFind(q), all=f.res, res=gsFilter(all);
+  var h=f.fuzzy?'<div class="warnbox" style="margin-bottom:12px"><span>≈</span><div>No exact match for “'+esc(q)+'”. '+(f.fuzzy==='part'?'Showing results that match some of your words.':'Showing close spellings.')+'</div></div>':'';
+  /* supplier summary — what they billed / supplied, what was paid, what is still due */
+  try{ var D=dueAll(), toks=gsNorm(q).split(' ').filter(Boolean), cards=[];
+    Object.keys(D).forEach(function(k){ var p=D[k], nm=gsNorm(p.name); if(f.fuzzy==='part'?toks.some(function(t){ return t.length>=4&&gsMatch(nm,[t],true); }):gsMatch(nm,toks,f.fuzzy)) cards.push(p); });
+    cards.sort(function(a,b){return b.cost-a.cost;}).slice(0,4).forEach(function(p){
+      h+='<div class="card" style="margin-bottom:12px"><header><h3>👤 '+gsMark(p.name,q)+'</h3><span class="sub">'+(p.byBill?'counted by vendor bills':'counted from registers & pending goods')+' · paid = Cash Book payments</span></header>'+
+        '<div class="tiles" style="padding:0 14px 14px">'+tile('a','Work & material',inr0(p.cost),p.noPrice?p.noPrice+' rows without price':'all rows priced')+tile('g','Paid',inr0(p.paid),p.adv?'incl. advance '+inr0(p.adv):'')+
+        tile(p.due>0.5?'c':'g',p.due<-0.5?'Advance with them':'Still to pay',inr0(Math.abs(p.due)),p.due>0.5?'owed':'nothing owed')+'</div></div>'; });
+  }catch(e){}
+  if(!all.length) return h+'<div class="empty"><b>Nothing found for “'+esc(q)+'”.</b><p class="hint">Try fewer words, only part of the name (e.g. “vijay”), a bill number or an amount.</p></div>';
+  var cnt={}; all.forEach(function(x){ cnt[x.t]=(cnt[x.t]||0)+1; });
+  var sum=function(t,pd){ return res.filter(function(x){ return x.t===t&&(!pd||x.paid===pd); }).reduce(function(s,x){return s+(+x.amt||0);},0); };
+  var tl=[];
+  if(res.some(function(x){return x.t==='bill';})) tl.push(tile('a','Bills',inr0(sum('bill')),res.filter(function(x){return x.t==='bill';}).length+' bills · '+inr0(sum('bill','unpaid'))+' not fully paid'));
+  if(res.some(function(x){return x.t==='cash';})) tl.push(tile('g','Paid (Cash Book)',inr0(sum('cash')),res.filter(function(x){return x.t==='cash';}).length+' payments'));
+  if(res.some(function(x){return x.t==='goods';})) tl.push(tile('s','Goods & registers',inr0(sum('goods')),inr0(sum('goods','unpaid'))+' of it not paid'));
+  if(tl.length) h+='<div class="tiles" style="margin-bottom:12px">'+tl.join('')+'</div>';
+  h+='<p class="hint" style="margin:0 0 8px">'+res.length+' of '+all.length+' results'+(res.length<all.length?' (filters on)':'')+' · '+
+    GS_TYPES.filter(function(t){return t[0]!=='all'&&cnt[t[0]];}).map(function(t){ return t[1]+' '+cnt[t[0]]; }).join(' · ')+'</p>';
+  var show=res.slice(0,300);
+  h+='<div class="card"><div class="tw"><table class="t gsTable"><thead><tr><th></th><th>Date</th><th>What</th><th>Details</th><th>Site</th><th class="n">Amount</th><th>Status</th><th></th></tr></thead><tbody>'+
+    show.map(function(x){ return '<tr class="gsRow" onclick="gsRun(this.dataset.open)" data-open="'+esc(x.open)+'"><td>'+x.ic+'</td><td class="mono" style="white-space:nowrap">'+esc(gsDmy(x.date))+'</td>'+
+      '<td><b>'+gsMark(x.title,q)+'</b><div class="hint">'+esc(x.no||'')+'</div></td><td class="hint" style="max-width:420px">'+gsMark(x.sub,q)+'</td>'+
+      '<td>'+esc(x.site||'')+'</td><td class="n">'+(x.amt?gsAmt(x.amt):'')+'</td><td>'+gsStPill(x)+'</td><td><button class="btn sm" onclick="event.stopPropagation();gsRun(this.closest(\'tr\').dataset.open)">Open</button></td></tr>'; }).join('')+
+    '</tbody></table></div>'+(res.length>show.length?'<p class="hint" style="padding:10px 14px">Showing the first 300 — add another word or a filter to narrow it.</p>':'')+'</div>';
+  return h;
+}
+
+/* ---- wire it in: top-bar box, menu entry, "/" and Ctrl+K ---- */
+(function gsInstall(){
+  var css=document.createElement('style');
+  css.textContent='#gsWrap{position:relative;flex:1;max-width:420px;min-width:150px;margin:0 10px}'+
+   '#gsBox{width:100%;padding:6px 10px 6px 30px;font-size:13px;border-radius:999px}'+
+   '#gsWrap .gsMag{position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:13px;opacity:.6;pointer-events:none}'+
+   '#gsDrop{display:none;position:absolute;left:0;right:0;top:calc(100% + 6px);min-width:min(560px,92vw);max-height:70vh;overflow:auto;z-index:60;background:var(--surface,#fff);border:1px solid var(--line,#ddd);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.18);padding:6px}'+
+   '.gsItem{display:flex;gap:10px;align-items:flex-start;width:100%;text-align:left;background:none;border:0;padding:8px 10px;border-radius:8px;cursor:pointer;color:inherit;font:inherit}'+
+   '.gsItem:hover,.gsItem.on{background:var(--surface-2,#f3f3f3)}.gsIc{font-size:16px;line-height:1.3}.gsMain{flex:1;min-width:0}'+
+   '.gsSub{display:block;font-size:11.5px;color:var(--muted,#777);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'+
+   '.gsR{display:flex;flex-direction:column;align-items:flex-end;gap:3px;font-size:12.5px;white-space:nowrap}'+
+   '.gsAll{display:block;width:100%;margin-top:4px;padding:9px;border:0;border-top:1px solid var(--line,#ddd);background:none;color:var(--accent,#2563eb);font:inherit;font-weight:600;cursor:pointer}'+
+   '.gsHint{padding:8px 10px;font-size:12px;color:var(--muted,#777)}'+
+   '#gsDrop mark,.gsTable mark,#view .card mark{background:color-mix(in srgb,#facc15 55%,transparent);color:inherit;border-radius:3px;padding:0 1px}'+
+   '.gsRow{cursor:pointer}.gsRow:hover{background:var(--surface-2,#f6f6f6)}'+
+   '@keyframes gsFl{0%,60%{background:color-mix(in srgb,#facc15 60%,transparent)}100%{background:transparent}}.gsFlash,.gsFlash td{animation:gsFl 3.5s ease-out}'+
+   '@media (max-width:960px){#gsWrap{order:3;flex-basis:100%;max-width:none;margin:8px 0 0}#topbar{flex-wrap:wrap}}'+
+   '@media print{#gsWrap{display:none}}';
+  document.head.appendChild(css);
+  var crumb=document.getElementById('crumb');
+  if(crumb&&!document.getElementById('gsWrap')){
+    var w=document.createElement('div'); w.id='gsWrap';
+    w.innerHTML='<span class="gsMag">🔎</span><input id="gsBox" class="in" type="search" autocomplete="off" placeholder="Search bills, suppliers, items, amounts…  ( / )" '+
+      'oninput="gsQuickInput(this.value)" onfocus="if(this.value)gsQuickShow()" onblur="setTimeout(function(){var d=document.getElementById(\'gsDrop\');if(d)d.style.display=\'none\';},150)" onkeydown="gsQuickKey(event)"><div id="gsDrop"></div>';
+    crumb.parentNode.insertBefore(w,crumb.nextSibling);
+  }
+  try{ if(typeof ICONS!=='undefined'&&!ICONS.search&&typeof IC==='function') ICONS.search=IC('<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>');
+    PAGES.search=P_search; TITLES.search='Search everything';
+    if(!NAV.some(function(g){ return g[1].some(function(i){return i[0]==='search';}); })) NAV[0][1].splice(1,0,['search','Search everything','search']);
+    if(typeof S!=='undefined'&&S&&S.ui) renderNav(); }catch(e){}
+  document.addEventListener('keydown',function(e){
+    var tag=(e.target&&e.target.tagName)||''; var typing=/INPUT|TEXTAREA|SELECT/.test(tag)||(e.target&&e.target.isContentEditable);
+    if((e.key==='/'&&!typing)||((e.ctrlKey||e.metaKey)&&(e.key==='k'||e.key==='K'))){ var b=document.getElementById('gsBox'); if(b){ e.preventDefault(); b.focus(); b.select(); } }
+  });
+})();
+</script>
 
 </body>
 </html>

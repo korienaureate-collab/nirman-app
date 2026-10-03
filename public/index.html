@@ -331,7 +331,7 @@ textarea.in{min-height:58px;resize:vertical}
   <aside id="rail">
     <div class="brand">
       <div class="mark" id="railMark">KA</div>
-      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 03-Oct 19:30</span></div>
+      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 03-Oct 20:00</span></div>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -10311,7 +10311,10 @@ function lbCostTiles(reg,rows){
    A supplier with vendor bills (e.g. Madan Yadav) is measured by his bills, not by the register rows, so nothing is counted twice. */
 var DUE_STOP={hdfc:1,saliwada:1,aac:1,block:1,blocks:1,traders:1,trader:1,trades:1,ji:1,jbp:1,jabalpur:1,barela:1,bypass:1,gour:1,gor:1,and:1,sons:1,pvt:1,ltd:1,sales:1,the:1,enterprises:1,enterprise:1,infra:1,company:1,store:1,stores:1,shop:1,cash:1,cas:1,chack:1,paid:1,agst:1,against:1,online:1,product:1,products:1,petroleum:1,pump:1,jcb:1};
 var DUE_SAME={bakil:'vakil'};   /* the same name spelt two ways on paper */
-function dueKey(name){ return String(name||'').toLowerCase().replace(/[^a-z ]/g,' ').split(/\s+/).map(function(t){ return DUE_SAME[t]||t; }).filter(function(t,i,all){ return t.length>=3&&!DUE_STOP[t]&&all.indexOf(t)===i; }).sort().join(' '); }
+function dueKey(name){ var w=String(name||'').toLowerCase().replace(/[^a-z ]/g,' ').split(/\s+/).map(function(t){ return DUE_SAME[t]||t; });
+  var k=w.filter(function(t,i,all){ return t.length>=3&&!DUE_STOP[t]&&all.indexOf(t)===i; }).sort().join(' ');
+  if(!k){ var raw=String(name||'').toLowerCase().replace(/[^a-z]/g,''); var ini=w.filter(function(t){ return t&&!DUE_STOP[t]; }).join(''); k=ini?'~'+ini:(raw?'~'+raw:''); }   /* "S.K. Enterprises" → "~sk" */
+  return k; }
 var DUE_REGS=['gitti','msand','loha','cement','adhesive','bindingwire','tmgitti','readymix','bricks','blocks','diesel'];
 var DUE_LABEL={gitti:'Gitti',msand:'M-Sand',loha:'Loha',cement:'Cement',adhesive:'Adhesive',bindingwire:'Binding wire',tmgitti:'T.M. Gitti',readymix:'Readymix',bricks:'Bricks',blocks:'AAC blocks',diesel:'Diesel',incoming:'Incoming goods (pending)',bills:'Vendor bills',after:'After his account — not billed yet'};
 function duePartyName(r,reg){

@@ -331,7 +331,7 @@ textarea.in{min-height:58px;resize:vertical}
   <aside id="rail">
     <div class="brand">
       <div class="mark" id="railMark">KA</div>
-      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 02-Oct 18:45</span></div>
+      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 03-Oct 15:00</span></div>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -1717,8 +1717,11 @@ function siteCost(){
   /* logbook costs not in the accounts yet: only what is still unpaid (their Cash Book payments are already expenses above) */
   var P=dueAll(); Object.keys(P).forEach(function(k){ var p=P[k];
     if(p.byBill){ var ps={Bypass:0,Barela:0};   /* bill supplier: bills are in the vouchers above; add only their Pending goods that have no bill */
-      ((S.lb&&S.lb.incoming)||[]).forEach(function(r){ if(/paid/i.test(r.status||'')||r.billId||r.bill||r._linkedBill||r.transfer) return; var kk=dueKey(r.party); kk=DUE_ALIAS[kk]||kk; if(kk!==k) return; var c=+r.amt||0; if(c>0) ps[r.site==='Barela'?'Barela':'Bypass']+=c; });
-      ['Bypass','Barela'].forEach(function(st){ if(ps[st]) put('Goods — '+p.name+' (pending, no bill yet)',st,ps[st],ps[st]); }); return; }
+      ((S.lb&&S.lb.incoming)||[]).forEach(function(r){ if(/paid/i.test(r.status||'')||r.billId||r.bill||r._linkedBill||r.transfer) return; if(dueRowKey(r.party)!==k) return; var c=+r.amt||0; if(c>0) ps[r.site==='Barela'?'Barela':'Bypass']+=c; });
+      /* an advance left over after their bills (e.g. Manohar ₹1,666) already pays part of these goods */
+      var usedAdv=0; (S.purchases||[]).forEach(function(b){ if(b.party===p.pid) usedAdv+=(extra[b.id]||0); });
+      var advLeft=Math.max(0,(p.adv||0)-usedAdv), tot=ps.Bypass+ps.Barela, owe=Math.max(0,tot-advLeft);
+      ['Bypass','Barela'].forEach(function(st){ if(ps[st]) put('Goods — '+p.name+' (pending, no bill yet)',st,ps[st],tot?owe*ps[st]/tot:0); }); return; }
     if(!(p.due>0.5)) return;
     var bySite={Bypass:0,Barela:0}, tot=0;
     DUE_REGS.concat(['incoming']).forEach(function(reg){ ((S.lb&&S.lb[reg])||[]).forEach(function(r){ if(dueKey(reg==='incoming'?r.party:duePartyName(r,reg))!==k) return;
@@ -8977,7 +8980,7 @@ function P_lb_incoming(){
     '<button class="btn sm" onclick="lbDedup(\'incoming\')">\ud83e\uddf9 Dedup</button>'+lbUndoBtn('incoming')+
     '<button class="btn pri" onclick="lbIncomingQuick()">+ Item (Qty \u00d7 Rate)</button>'+
     '<button class="btn sm gh" onclick="lbSetAllIncoming(\'Paid\')">✓ Mark All Paid</button>'+
-    '<button class="btn sm" onclick="lbSetAllIncoming(\'Pending\')">↩ All Pending</button>'+
+    '<button class="btn sm" onclick="lbSetAllIncoming(\'Pending\')">↩ All Pending</button>'+lbIncUndoBtn()+
     '<button class="btn sm" onclick="expIncomingCSV()">Export CSV</button>');
   h+=lbTiles([
     {cls:'a',k:'Total Items',v:all.length,n:'entries recorded'},
@@ -8985,8 +8988,10 @@ function P_lb_incoming(){
     {cls:'c',k:'Pending',v:fmtC(pend),n:'not yet paid'},
     {cls:'g',k:'Paid',v:fmtC(paid),n:'status = Paid'}
   ]);
+  var _nb=all.filter(function(r){return incNoPrice(r)&&r.noBill;}).length;
   if(_np) h+='<div class="warnbox" style="margin-bottom:14px;cursor:pointer" onclick="S.ui.incNoPrice=true;render();window.scrollTo(0,0)"><span>₹</span><div style="flex:1">'+
-    '<b>'+_np+' goods have no price</b> — their amount is ₹0, so the totals above are too low. <u>Click to see only these and fill the prices</u>'+
+    (_nb?'<b>'+_nb+' goods have no bill</b> — no price anywhere in the books (checked), so their cost is not counted'+(_np>_nb?' · <b>'+(_np-_nb)+' more have no price yet</b>':'')+'. <u>Click to see them</u> — type a price when you get the bill'
+        :'<b>'+_np+' goods have no price</b> — their amount is ₹0, so the totals above are too low. <u>Click to see only these and fill the prices</u>')+
     (_rp?' · '+_rp+' have the price written in the remark':'')+'.</div><button class="btn sm pri" style="margin-left:8px">Show '+_np+' →</button></div>';
   h+=lbIncomingCard('Bypass')+lbIncomingCard('Barela');
   if(!all.length) h+='<div class="card"><header><h3>No items yet</h3></header><p class="hint" style="padding:16px">Use + Item (Qty \u00d7 Rate) \u2014 fill Qty and Rate, Amount is automatic.</p></div>';
@@ -9045,6 +9050,7 @@ function cashFindParty(r){
     return q&&(q===n||(n.length>=5&&q.indexOf(n)===0)||(q.length>=5&&n.indexOf(q)===0)); })||null;
 }
 function cashHeadFor(r){
+  if(r&&r.head&&acc(r.head)) return r.head;   /* the row says which expense head it is (e.g. material bought with a cheque written under another name) */
   var t=cashRowText(r), c=null;
   for(var i=0;i<CASH_RULES.length;i++){ if(t.indexOf(CASH_RULES[i][0])>=0){ c=CASH_RULES[i][1]; break; } }
   c=c||'5901'; if(!acc(c)) c=acc('5901')?'5901':(S.coa.find(function(a){return a.cls==='EXP'||a.cls==='COGS';})||{}).code||'5901';
@@ -9065,7 +9071,7 @@ function cashLinesFor(r,skipVch){
     var ac=p.ac||'2101';
     (S.purchases||[]).filter(function(b){return b.party===p.id&&R2((+b.net||0)-(+b.paid||0))>0.5;}).sort(function(a,b){return a.date<b.date?-1:1;}).forEach(function(b){
       if(left<=0) return; var due=R2((+b.net||0)-(+b.paid||0)), x=R2(Math.min(due,left)); lines.push({ac:ac,dr:x,cr:0,note:b.no}); left=R2(left-x); });
-    if(left>0&&!r.payTo&&(lines.length||/creditor|supplier|vendor/i.test(p.type||''))){ lines.push({ac:ac,dr:left,cr:0,note:'Advance — '+p.name}); left=0; }   /* with payTo the rest stays the payee's own work */
+    if(left>0&&!r.head&&(lines.length||/creditor|supplier|vendor/i.test(p.type||''))){   /* a row with its own expense head is a purchase, not an advance */ lines.push({ac:ac,dr:left,cr:0,note:'Advance — '+p.name}); left=0; }   /* with payTo the rest stays the payee's own work */
   }
   if(left>0) lines.push({ac:cashHeadFor(r),dr:left,cr:0,note:r.party||''});
   lines.push({ac:cash?'1102':'1103',dr:0,cr:amt,note:cash?'Cash':(r.mode||'Bank')});
@@ -9462,22 +9468,30 @@ function showBatchImportModal(){
 }
 
 /* --- One-click status for Incoming Goods --- */
-function lbSetAllIncoming(status){
-  if(!S.lb||!S.lb.incoming||!S.lb.incoming.length){ toast('No incoming items',true); return; }
-  if(!confirm('Mark ALL '+S.lb.incoming.length+' incoming items as '+status+'?')) return;
-  S.lb.incoming.forEach(function(r){ r.status=status; });
-  S.audit.push({id:uid(),ts:new Date().toISOString(),user:USER(),op:'incoming_status_bulk',entity:'lb',ref:'incoming',detail:'all marked '+status});
-  save(); render();
-  toast('\u2705 All marked '+status);
+function lbSetAllIncoming(status){ lbIncStatusBulk(status,null); }
+/* Bulk Paid / Pending — asks first, shows what changes, keeps an undo copy.
+   "Paid" here means paid on the spot; goods without a Cash Book payment then drop out of "still to pay". */
+function lbIncStatusBulk(status,site){
+  var all=(S.lb&&S.lb.incoming)||[]; if(!all.length){ toast('No incoming items',true); return; }
+  var rows=all.filter(function(r){ return (!site||(r.site||'Bypass')===site)&&String(r.status||'')!==status&&!r.billId; });
+  if(!rows.length){ toast('Nothing to change'+(site?' at '+site:''),true); return; }
+  var amt=R2(rows.reduce(function(a,r){return a+(+r.amt||0);},0)), np=rows.filter(incNoPrice).length;
+  var msg=rows.length+' item'+(rows.length>1?'s':'')+(site?' at '+site:'')+' will change to '+status+' ('+rs(amt)+(np?', '+np+' without price':'')+').\n\n'+
+    (status==='Paid'?'Paid = paid on the spot. Goods that have no Cash Book payment will no longer show in "still to pay".\nRows linked to a bill are not changed (the bill decides).':'They will show in "still to pay" until a Cash Book payment covers them.')+'\n\nYou can undo this right after.';
+  if(!confirm(msg)) return;
+  all.forEach(function(r){ delete r._bulkPrev; });   /* each changed row keeps its old status, so undo works even after the list is re-sorted */
+  rows.forEach(function(r){ r._bulkPrev=r.status||''; r.status=status; });
+  logAudit('U','Incoming','bulk',rows.length+' items'+(site?' at '+site:'')+' marked '+status+' ('+rs(amt)+')');
+  save(); render(); toast('✅ '+rows.length+' marked '+status+' — ↩ Undo is next to the button');
 }
-function lbSetAllIncomingSite(status, site){
-  if(!S.lb||!S.lb.incoming||!S.lb.incoming.length){ toast('No items',true); return; }
-  var rows=S.lb.incoming.filter(function(r){return (r.site||'Bypass')===site;});
-  if(!rows.length){ toast('No items for '+site,true); return; }
-  rows.forEach(function(r){ r.status=status; });
-  save(); render();
-  toast('\u2705 '+rows.length+' '+site+' items marked '+status);
+function lbIncStatusUndo(){
+  var all=(S.lb&&S.lb.incoming)||[], n=0;
+  all.forEach(function(r){ if('_bulkPrev' in r){ r.status=r._bulkPrev; delete r._bulkPrev; n++; } });
+  if(!n){ toast('Nothing to undo',true); return; }
+  logAudit('U','Incoming','bulk','Undo of the last Paid / Pending change'); save(); render(); toast('↩ Status put back');
 }
+function lbIncUndoBtn(){ var has=((S.lb&&S.lb.incoming)||[]).some(function(r){ return '_bulkPrev' in r; }); return has?'<button class="btn sm" onclick="lbIncStatusUndo()">↩ Undo Paid/Pending</button>':''; }
+function lbSetAllIncomingSite(status, site){ lbIncStatusBulk(status,site); }
 function lbGuessName(rem){
   if(!rem) return '';
   var s=String(rem);
@@ -10307,6 +10321,12 @@ function duePartyName(r,reg){
   return p;
 }
 var DUE_ALIAS={};
+/* the "Paid & due" key of a supplier name: a supplier with bills by exact name, else the shortened name */
+function dueRowKey(name){
+  var nm=String(name||'').trim().toLowerCase(), bp=nm&&(S.parties||[]).find(function(x){ return String(x.name||'').trim().toLowerCase()===nm; });
+  if(bp&&(S.purchases||[]).some(function(b){ return b.party===bp.id; })) return 'id:'+bp.id;
+  var k=dueKey(name); return (DUE_ALIAS&&DUE_ALIAS[k])||k;
+}
 /* Work done after a supplier's account was made (bill field "covers": the last date each item is billed to),
    e.g. Madan's account counts murum to 11/9 and JCB to 31/8 — later trips and hours are still owed but not billed yet. */
 var AFTER_ITEM={murum:'Hard Murum',jcb:'JCB',roller:'Road roller'};
@@ -10323,7 +10343,11 @@ function afterBillWork(){
 }
 function dueAll(){
   var P={}; DUE_ALIAS={};
-  var get=function(name){ var k=dueKey(name); if(!k) return null; if(DUE_ALIAS[k]) return P[DUE_ALIAS[k]]; if(!P[k]) P[k]={key:k,name:String(name).trim(),cost:0,noPrice:0,parts:{},paid:0,payRows:0,byBill:false}; return P[k]; };
+  var get=function(name){
+    /* a supplier with bills is found by its exact name first ("Manohar Sales" ≠ "Manohar Traders", both shorten to "manohar") */
+    var nm=String(name||'').trim().toLowerCase(), bp=nm&&(S.parties||[]).find(function(x){ return String(x.name||'').trim().toLowerCase()===nm; });
+    if(bp&&P['id:'+bp.id]) return P['id:'+bp.id];
+    var k=dueKey(name); if(!k) return null; if(DUE_ALIAS[k]) return P[DUE_ALIAS[k]]; if(!P[k]) P[k]={key:k,name:String(name).trim(),cost:0,noPrice:0,parts:{},paid:0,payRows:0,byBill:false}; return P[k]; };
   /* suppliers with vendor bills (kept apart by party, so "Manohar Sales" ≠ "Manohar Traders"): their bills are the cost, their bill payments the paid amount */
   (S.purchases||[]).forEach(function(b){ var pt=P_(b.party); if(!pt) return; var id='id:'+pt.id;
     if(!P[id]) P[id]={key:id,name:pt.name,cost:0,noPrice:0,parts:{},paid:0,payRows:0,byBill:true,pid:pt.id};
@@ -11306,7 +11330,7 @@ function dcRun(){
       why:'Its bill '+(r.bill||'')+' was deleted. The goods row itself is kept.',ev:{cols:['Date','Item','Qty','Amount','Bill'],rows:[[dmy(r.date),r.item,r.qty,fmtC(r.amt),r.bill||'']]},
       acts:[{l:'Remove the broken link',pri:1,fn:function(){ delete r.billId; delete r.bill; logAudit('U','Incoming',r.item,'Broken bill link removed'); save(); render(); }}]}); });
   /* "x70/-", "@85", "×12" in the remark mean per piece/kg — those are right; only a bare "495/-" is unclear */
-  var rt=INC.filter(function(r){ var v=incRemarkPrice(r), q=+r.qty||0; if(r.billId||r.bill||/(^|[\s(])[x×@*]\s*[\d₹]|per\s|each|प्रति|\/\s*(kg|no|nos|pc|pcs|mtr|m|ltr|bag|roll)\b/i.test(String(r.remark||''))) return false;
+  var rt=INC.filter(function(r){ var v=incRemarkPrice(r), q=+r.qty||0; if(r.billId||r.bill||r.est||/(^|[\s(])[x×@*]\s*[\d₹]|per\s|each|प्रति|\/\s*(kg|no|nos|pc|pcs|mtr|m|ltr|bag|roll)\b/i.test(String(r.remark||''))) return false;
     return v>0&&q>1&&Math.abs((+r.amt||0)-q*v)<=1&&Math.abs((+r.amt||0)-v)>1; });
   if(rt.length) add({key:'dc-inctotal|'+rt.map(function(r){return r.date+r.item;}).join(',').slice(0,160),sev:'check',area:'Incoming Goods',
     title:rt.length+' Incoming Goods rows: is the price in the remark for the whole lot or for one piece?',

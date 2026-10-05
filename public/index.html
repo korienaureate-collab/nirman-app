@@ -331,7 +331,7 @@ textarea.in{min-height:58px;resize:vertical}
   <aside id="rail">
     <div class="brand">
       <div class="mark" id="railMark">KA</div>
-      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 05-Oct 14:15</span></div>
+      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 05-Oct 16:30</span></div>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -1873,6 +1873,7 @@ function P_mlog(){
       // Nil entries: never auto-dedup — use unique id so each is kept
       key='KEEP|'+r.id;
     }
+    if(r._nodup||r.offsite) key='KEEP|'+r.id; else if(hmS>0) key+='|'+(r.machine||'')+'|'+(+(r.hours||0)).toFixed(2);
     if(mlogSeen[key]) { mlogDupIds.add(r.id); mlogDupIds.add(mlogSeen[key]); }
     else mlogSeen[key]=r.id;
   });
@@ -1906,7 +1907,7 @@ function P_mlog(){
       var badge=hrs>0
         ?'<span style="margin-left:6px;font-size:9px;background:rgba(0,180,100,0.2);color:var(--ok,#0b6);padding:1px 6px;border-radius:20px">'+hrs.toFixed(1)+'h</span>'
         :'<span style="margin-left:6px;font-size:9px;background:rgba(255,150,0,0.15);color:var(--warn,#f90);padding:1px 6px;border-radius:20px">NIL</span>';
-      var dupBadge=mlogDupIds.has(r.id)?'<span style="margin-left:4px;font-size:9px;background:#e53;color:#fff;padding:1px 5px;border-radius:3px">DUP</span>':'';
+      var dupBadge=mlogDupIds.has(r.id)?'<span style="margin-left:4px;font-size:9px;background:#e53;color:#fff;padding:1px 5px;border-radius:3px">DUP</span><button class="btn sm" style="margin-left:3px;padding:0 6px;font-size:10px;line-height:16px" onclick="event.stopPropagation();mlogMarkNotDup(\''+r.id+'\')" title="This is a real separate entry — stop flagging it">✓ Not a dupe</button>':'';
       return '<span class="mono"'+( isNewDate?'':' style="color:var(--muted)"')+'>'+dmy(r.date)+'</span>'+(isNewDate?badge:'')+dupBadge;
     }},
     {l:'Machine',f:function(r){var m=MACH(r.machine)||{}; return (r.mtype==='roller'?'🛞 ':'🚜 ')+'<b>'+esc(m.code||'—')+'</b>';}},
@@ -2281,7 +2282,7 @@ function fixTripCFT(){
   var before=R2(S.trips.reduce(function(s,t){return s+(+t.cum||0);},0));
   // Count issues
   var dups=0, seen0={};
-  S.trips.forEach(function(t){var k=(t.date||'')+'|'+(t.chalan||'')+'|'+(t.cum||0);if(seen0[k])dups++;else seen0[k]=1;});
+  S.trips.forEach(function(t){var k=(t.date||'')+'|'+(t.chalan||'')+'|'+(t.cum||0);if(t._nodup)return;if(seen0[k])dups++;else seen0[k]=1;});
   // LB- entries that are NOT Hava/Dumper (accumulated M-Sand/Gitti etc.)
   var badLB=S.trips.filter(function(t){
     if(!(t.chalan||'').startsWith('LB-')) return false;
@@ -2295,7 +2296,7 @@ function fixTripCFT(){
   if(!confirm('CFT repair on Trip Sheet\n\n• '+dups+' exact duplicate trip(s)\n• '+badLB.length+' misrouted LB- entries (M-Sand/Gitti/etc) — will be removed\n• '+bad.length+' suspicious Murum trips with CFT > 600 (total '+fmtI(badTot,0)+' CFT)\n\nFix all?')) return;
   // Step 1: remove duplicates
   var seen={},kept=[];
-  S.trips.forEach(function(t){var k=(t.date||'')+'|'+(t.chalan||'')+'|'+(t.cum||0);if(seen[k]){logAudit('D','Trip',t.chalan||'','duplicate removed by Fix CFT');return;}seen[k]=1;kept.push(t);});
+  S.trips.forEach(function(t){var k=(t.date||'')+'|'+(t.chalan||'')+'|'+(t.cum||0);if(seen[k]&&!t._nodup){logAudit('D','Trip',t.chalan||'','duplicate removed by Fix CFT');return;}seen[k]=1;kept.push(t);});
   S.trips=kept;
   // Step 2: remove ALL M-Sand/Gitti/Sand entries from Trip Sheet
   S.trips=S.trips.filter(function(t){
@@ -9831,7 +9832,7 @@ function lbEditableTable(register, cols, rows, realIndices){
       }
     });
     var dupBtnHtml=isDup
-      ?'<button class="btn sm" style="padding:1px 5px;font-size:10px;margin-right:2px;background:rgba(220,50,50,0.15);color:var(--crit,#e53);border:1px solid rgba(220,50,50,0.4)" onclick="lbMarkNotDup('+rq+','+realIdx+')" title="Mark as genuine — not a duplicate">DUP ✓?</button>'
+      ?'<button class="btn sm" style="padding:1px 5px;font-size:10px;margin-right:2px;background:rgba(220,50,50,0.15);color:var(--crit,#e53);border:1px solid rgba(220,50,50,0.4)" onclick="lbMarkNotDup('+rq+','+realIdx+')" title="Mark as genuine — not a duplicate">✓ Not a dupe</button>'
       :'';
     // Mark as Paid quick button for pending incoming rows
     var markPaidBtn=(register==='incoming'&&!/paid/i.test(String(r.status||'')))
@@ -10612,7 +10613,7 @@ function P_lb_loha(){
   var totalKg=kgOf(all);
   var sizes=['8mm','10mm','12mm','16mm','20mm','25mm','Other'];
   var dupIndices=lbFindDupIndices('loha');
-  var dupWarn=Object.keys(dupIndices).length?'<div style="background:rgba(220,50,50,0.1);color:var(--crit);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px">⚠ Duplicates found — click 🧹 Dedup to remove</div>':'';
+  var dupWarn=Object.keys(dupIndices).length?'<div style="background:rgba(220,50,50,0.1);color:var(--crit);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px">⚠ Some rows look the same — click 🧹 Dedup to review (delete the copy, or ✓ Not duplicates)</div>':'';
   let h=pageHead('Loha — Iron / Steel Register','8mm · 10mm · 12mm · 16mm — Bypass & Barela · click any cell to edit',
     '<button class="btn sm" style="background:rgba(99,179,237,0.15);color:#63b3ed" onclick="fixLbSizes()">🔧 Fix Sizes</button>'+
     '<button class="btn sm" style="background:rgba(99,179,237,0.15);color:#63b3ed" onclick="fixLbSuppliers(\'loha\')">🔧 Fix Suppliers</button>'+
@@ -10661,7 +10662,7 @@ function lbPageSimple(reg, title, unit, cols){
   var all=S.lb[reg];
   var total=all.reduce(function(s,r){return s+(parseFloat(r.qty)||0);},0);
   var dupIndices=lbFindDupIndices(reg);
-  var dupWarn=Object.keys(dupIndices).length?'<div style="background:rgba(220,50,50,0.1);color:var(--crit);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px">⚠ '+Math.floor(Object.keys(dupIndices).length/2)+' duplicates — click 🧹 Dedup</div>':'';
+  var dupWarn=Object.keys(dupIndices).length?'<div style="background:rgba(220,50,50,0.1);color:var(--crit);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px">⚠ '+Math.floor(Object.keys(dupIndices).length/2)+' rows look the same — click 🧹 Dedup to review (delete the copy, or ✓ Not duplicates)</div>':'';
   let h=pageHead(title+' ('+all.length+' entries)','Click any cell to edit',
     lbPageBtns(reg));
   h+=lbTiles([{cls:'a',k:'Total Entries',v:all.length,n:total.toLocaleString()+' '+unit+' total'}]);
@@ -10689,7 +10690,7 @@ function lbSiteSplitPage(reg,title,unit,cols){
   var bl=all.filter(function(r){return r.site==='Barela';});
   var bpT=sum(bp), blT=sum(bl);
   var dupIndices=lbFindDupIndices(reg);
-  var dupWarn=Object.keys(dupIndices).length?'<div style="background:rgba(220,50,50,0.1);color:var(--crit);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px">⚠ Duplicates found — click 🧹 Dedup</div>':'';
+  var dupWarn=Object.keys(dupIndices).length?'<div style="background:rgba(220,50,50,0.1);color:var(--crit);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px">⚠ Some rows look the same — click 🧹 Dedup to review (delete the copy, or ✓ Not duplicates)</div>':'';
   let h=pageHead(title+' ('+all.length+' entries)','Split by site — Bypass & Barela · click any cell to edit',lbPageBtns(reg));
   h+=lbTiles([
     {cls:'a',k:'Total Entries',v:all.length,n:'rows recorded'},
@@ -10718,7 +10719,7 @@ function P_lb_readymix(){
   all.forEach(function(r){var g=r.grade||'General';if(!byGrade[g])byGrade[g]=0;byGrade[g]+=(parseFloat(r.qty)||0);});
   var gradeStr=Object.keys(byGrade).map(function(g){return g+': '+byGrade[g]+' M³';}).join(' · ');
   var dupIndices=lbFindDupIndices('readymix');
-  var dupWarn=Object.keys(dupIndices).length?'<div style="background:rgba(220,50,50,0.1);color:var(--crit);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px">⚠ Duplicates found — click 🧹 Dedup</div>':'';
+  var dupWarn=Object.keys(dupIndices).length?'<div style="background:rgba(220,50,50,0.1);color:var(--crit);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px">⚠ Some rows look the same — click 🧹 Dedup to review (delete the copy, or ✓ Not duplicates)</div>':'';
   let h=pageHead('Readymix Concrete ('+all.length+' entries)','Track RMC deliveries by grade · Click to edit',lbPageBtns('readymix'));
   h+=lbTiles([
     {cls:'a',k:'Total Deliveries',v:all.length,n:totalCum.toLocaleString()+' M³ total'},
@@ -10760,7 +10761,7 @@ function P_lb_bricks(){
   var bl=all.filter(function(r){return r.site==='Barela';});
   var bpT=nos(bp), blT=nos(bl);
   var dupIndices=lbFindDupIndices('bricks');
-  var dupWarn=Object.keys(dupIndices).length?'<div style="background:rgba(220,50,50,0.1);color:var(--crit);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px">⚠ Duplicates found — click 🧹 Dedup</div>':'';
+  var dupWarn=Object.keys(dupIndices).length?'<div style="background:rgba(220,50,50,0.1);color:var(--crit);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px">⚠ Some rows look the same — click 🧹 Dedup to review (delete the copy, or ✓ Not duplicates)</div>':'';
   let h=pageHead('Bricks — ईंट Register ('+all.length+' entries)','Laal (red) bricks · ACC blocks go to the Blocks page · click any cell to edit',
     '<button class="btn sm" style="background:rgba(99,179,237,0.15);color:#63b3ed" onclick="lbMoveAccOutOfBricks()">⇢ Move ACC → Blocks</button>'+
     '<button class="btn sm" onclick="fixAllDates()">Fix Dates</button>'+
@@ -10802,7 +10803,7 @@ function P_lb_blocks(){
   var bl=all.filter(function(r){return r.site==='Barela';});
   var bpMQ=mqOf(bp), blMQ=mqOf(bl);
   var dupIndices=lbFindDupIndices('blocks');
-  var dupWarn=Object.keys(dupIndices).length?'<div style="background:rgba(220,50,50,0.1);color:var(--crit);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px">⚠ Duplicates found — click 🧹 Dedup</div>':'';
+  var dupWarn=Object.keys(dupIndices).length?'<div style="background:rgba(220,50,50,0.1);color:var(--crit);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px">⚠ Some rows look the same — click 🧹 Dedup to review (delete the copy, or ✓ Not duplicates)</div>':'';
   let h=pageHead('AAC Blocks Register ('+all.length+' entries)','600×200×150 blocks · 1 M³ = 555 blocks · click any cell to edit',lbPageBtns('blocks'));
   h+=lbTiles([
     {cls:'a',k:'Total Entries',v:all.length,n:'rows recorded'},
@@ -11874,7 +11875,7 @@ function detectProblems(){
           type:'dup',severity:'warn',
           title:'Duplicate in Cash Book',
           detail:'Row #'+(i+1)+' ("'+esc(r.remark||r.party)+'", '+dmyS(d)+', '+fmtC(am)+') looks like a duplicate of row #'+(cseen[key]+1)+'.',
-          action:'go(\'lb_cash\')',actionLabel:'Open Cash Book'
+          action:'go(\'lb_cash\')',actionLabel:'Open Cash Book',dupReg:'cash',dupIdx:i
         });
       } else cseen[key]=i;
     });
@@ -11892,7 +11893,7 @@ function detectProblems(){
         var same=(inv&&oinv&&inv===oinv)||(!!o.vchId!==!!r.vchId&&(!inv||!oinv||inv===oinv))||(+r.litres>0&&+o.litres===+r.litres);
         if(same&&!(inv&&oinv&&inv!==oinv)) problems.push({key:'dupdiesel|'+k+'|'+i,type:'dup',severity:'warn',title:'Same diesel fill entered twice',
           detail:'Diesel register row #'+(i+1)+' ('+dmy(d)+', '+fmtC(am)+(inv?', invoice '+esc(inv):'')+') is the same fill as row #'+(prev+1)+' ('+esc(String(o.remark||'').slice(0,60))+').',
-          action:"go('lb_diesel')",actionLabel:'Open Diesel register'});
+          action:"go('lb_diesel')",actionLabel:'Open Diesel register',dupReg:'diesel',dupIdx:i});
       } else dseen[k]=i;
     });
   }
@@ -11928,6 +11929,7 @@ function dismissProblem(i){
     var reg=/cash/i.test(p.title)?'cash':'incoming';
     if(S.lb&&S.lb[reg]&&S.lb[reg][p.dupRemoveIdx]) S.lb[reg][p.dupRemoveIdx]._nodup=true;
   }
+  if(p.dupReg&&p.dupIdx!==undefined&&S.lb&&S.lb[p.dupReg]&&S.lb[p.dupReg][p.dupIdx]) S.lb[p.dupReg][p.dupIdx]._nodup=true;
   logAudit('U','Problems',p.type,(PROB_NODUP_TYPES[p.type]?'Marked not a duplicate: ':'Ignored: ')+String(p.title).replace(/<[^>]+>/g,'').slice(0,120));
   window._probsFlash={ok:false,msg:'Kept as it is — nothing in your books was changed or deleted. To remove an entry use the red/brown button (Delete / Keep … delete the others / Fix all).'};
   save(); render(); showProblems();
@@ -12697,7 +12699,7 @@ function boot(){
     // Remove exact duplicates
     var _seen={},_kept=[];
     S.trips.forEach(function(t){
-      if(!t.chalan){ _kept.push(t); return; }   /* two trips on one day without a chalan are two real trips */
+      if(!t.chalan||t._nodup){ _kept.push(t); return; }   /* two trips on one day without a chalan are two real trips; rows marked "not a duplicate" are never removed */
       var k=(t.date||'')+'|'+(t.chalan||'')+'|'+(t.src||'')+'|'+(t.cum||0);
       if(!_seen[k]){_seen[k]=1;_kept.push(t);}
     });
@@ -13473,6 +13475,188 @@ function gsResultsHtml(){
     if((e.key==='/'&&!typing)||((e.ctrlKey||e.metaKey)&&(e.key==='k'||e.key==='K'))){ var b=document.getElementById('gsBox'); if(b){ e.preventDefault(); b.focus(); b.select(); } }
   });
 })();
+</script>
+<script>
+/* ═══════════ "NOT A DUPLICATE" — EVERY PLACE THE APP FLAGS COPIES ═══════════
+   Every Dedup button now opens a review instead of deleting straight away. For each group of rows that
+   look the same you can: 🗑 delete the extra row, or press "✓ Not duplicates — keep all". The rows you keep
+   are remembered (_nodup) and are never flagged again — on the register page, in Problems and in Deep Check.
+   Works for: all registers (Cash Book, Incoming Goods, Diesel, Murum, Gitti, Loha, Cement …), Machine Log and Trip Sheet. */
+
+/* the same "looks alike" rule the register pages use — plus amount (and the pump invoice for diesel),
+   so two fills with different invoices (#9212 / #9213) are no longer flagged */
+function ndLbKey(register,r){
+  var d=(r.date||'').replace(/[^0-9]/g,'');
+  if(register==='cash'){
+    var amt=String(+(r.amt||r.amount||0)); var narr=(r.remark||r.narration||r.party||'').toLowerCase().trim().slice(0,10);
+    if(!d||!amt||amt==='0') return null; return d+'|'+amt+'|'+narr;
+  }
+  if(register==='dpr'){
+    var pp=(r.party||'').toLowerCase().replace(/[^a-z0-9]/g,''); if(!d||!pp) return null;
+    return d+'|'+pp.slice(0,8)+'|'+(r.site||'');
+  }
+  if(register==='incoming'){
+    var it=(r.item||'').toLowerCase().trim(), pa=(r.party||'').toLowerCase().trim(), q=String(+(r.qty||0));
+    if(!d||(it.length<2&&pa.length<2)) return null; return d+'|'+it.slice(0,10)+'|'+pa.slice(0,8)+'|'+q;
+  }
+  var q2=String(r.trips||r.qty||r.litres||'').replace(/[^0-9]/g,''), p=(r.party||r.supplierName||'').toLowerCase().trim(), s=(r.site||'');
+  if(!d) return null;
+  var k=d+'|'+q2+'|'+p.slice(0,8)+'|'+s+'|'+(+(r.amount||r.amt||0));
+  if(register==='diesel'){ var inv=(String(r.remark||'').match(/#\s*(\d{3,})|inv\w*\.?\s*#?\s*([0-9A-Z]{6,})/i)||[]).slice(1).filter(Boolean)[0]||''; k+='|'+inv; }
+  return k;
+}
+function lbFindDupIndices(register){
+  var rows=(S.lb&&S.lb[register])||[], seen={}, dups={};
+  rows.forEach(function(r,i){ if(!r||r._nodup) return; var k=ndLbKey(register,r); if(k===null) return;
+    if(seen[k]!==undefined){ dups[i]=true; dups[seen[k]]=true; } else seen[k]=i; });
+  return dups;
+}
+function lbMarkNotDup(register,idx){
+  if(!S.lb||!S.lb[register]||!S.lb[register][idx]) return;
+  S.lb[register][idx]._nodup=true;
+  logAudit('U',(TITLES&&TITLES['lb_'+register])||register,dmyS(toISO(S.lb[register][idx].date)||S.lb[register][idx].date),'Marked not a duplicate');
+  save(); render();
+  toast('✅ Marked as a real entry — it will not be flagged as a duplicate again');
+}
+
+/* ── generic review dialog ── */
+var ND=null;
+function ndGroupsBy(list,keyFn){
+  var g={}, order=[];
+  list.forEach(function(r){ if(!r||r._nodup) return; var k=keyFn(r); if(k===null||k===undefined) return; if(!g[k]){ g[k]=[]; order.push(k); } g[k].push(r); });
+  return order.filter(function(k){ return g[k].length>1; }).map(function(k){ return g[k]; });
+}
+function ndIsCopy(grp,ri){ var k=lbExactKey(grp[ri]); for(var j=0;j<ri;j++) if(lbExactKey(grp[j])===k) return true; return false; }
+function ndOpen(spec){
+  ND=spec; var groups=spec.groups();
+  if(!groups.length){ closeModal(); toast(spec.cleanMsg||'✅ No duplicates found'); return; }
+  ND._g=groups;
+  var copies=0; groups.forEach(function(grp){ grp.forEach(function(_,ri){ if(ndIsCopy(grp,ri)) copies++; }); });
+  var h='<div style="padding:9px 12px;border-radius:6px;margin-bottom:12px;font-size:13px;background:var(--surface-2);color:var(--ink-2);line-height:1.5">'+
+    '<b>'+groups.length+' group'+(groups.length>1?'s':'')+'</b> of rows look the same. Check each group with the paper:<br>'+
+    '• the same entry written twice → press <b>🗑 Delete</b> on the extra row<br>'+
+    '• real separate entries → press <b>✓ Not duplicates — keep all</b> (they will never be flagged again)<br>'+
+    '<span class="hint">Nothing changes until you press a button.</span></div>';
+  groups.forEach(function(grp,gi){
+    var exact=grp.every(function(r){ return lbExactKey(r)===lbExactKey(grp[0]); });
+    h+='<div style="margin-bottom:14px;border:1px solid color-mix(in srgb,var(--crit) 35%,transparent);border-radius:8px;overflow:hidden">';
+    h+='<div style="background:var(--crit-soft);padding:7px 12px;font-size:12.5px;font-weight:600;color:var(--crit);display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+
+      '<span>Group '+(gi+1)+' · '+esc(spec.groupLabel(grp))+'</span>'+
+      '<span class="pill" style="font-weight:500">'+(exact?'every field the same':'looks alike — some fields differ')+'</span>'+
+      '<button class="btn sm" style="margin-left:auto" onclick="ndKeep('+gi+')">✓ Not duplicates — keep all</button></div>';
+    h+='<div style="overflow-x:auto"><table class="t" style="width:100%;font-size:12px"><thead><tr>'+spec.cols.map(function(c){ return '<th>'+c+'</th>'; }).join('')+'<th></th></tr></thead><tbody>';
+    grp.forEach(function(r,ri){
+      var cp=ndIsCopy(grp,ri);
+      h+='<tr'+(cp?' style="background:var(--crit-soft)"':'')+'>'+spec.cells(r).map(function(c){ return '<td>'+c+'</td>'; }).join('')+
+        '<td style="white-space:nowrap">'+(cp?'<span class="hint" style="margin-right:6px">copy of the row above</span>':'')+
+        '<button class="btn sm dngr gh" onclick="ndDel('+gi+','+ri+')">🗑 Delete</button></td></tr>';
+    });
+    h+='</tbody></table></div></div>';
+  });
+  modal(spec.title,h,
+    '<button class="btn" onclick="ndKeepEvery()" title="Every group is real separate entries">✓ None are duplicates — keep all</button>'+
+    (copies?'<button class="btn dngr" onclick="ndDelCopies()" title="Deletes only rows where every field is the same as a row above; keeps the first">🗑 Delete exact copies ('+copies+')</button>':'')+
+    '<button class="btn pri" onclick="closeModal()">Close</button>', true);
+}
+function ndReopen(){ if(ND) ndOpen(ND); }
+function ndKeep(gi){
+  var grp=ND&&ND._g&&ND._g[gi]; if(!grp) return;
+  grp.slice(1).forEach(function(r){ r._nodup=true; });   /* the first stays as the reference: a NEW copy of it is still caught */
+  logAudit('U',ND.area,dmyS(toISO(grp[0].date)||grp[0].date),grp.length+' rows marked not duplicates — '+ND.groupLabel(grp));
+  save(); render(); toast('✓ Kept all '+grp.length+' — they will not be flagged again'); ndReopen();
+}
+function ndKeepEvery(){
+  if(!ND||!ND._g) return; var n=0;
+  ND._g.forEach(function(grp){ grp.slice(1).forEach(function(r){ r._nodup=true; n++; }); });
+  logAudit('U',ND.area,'—',ND._g.length+' groups marked not duplicates');
+  save(); closeModal(); render(); toast('✓ All '+ND._g.length+' groups kept — they will not be flagged again');
+}
+function ndDel(gi,ri){
+  var grp=ND&&ND._g&&ND._g[gi]; if(!grp||!grp[ri]) return;
+  if(!ND.del(grp[ri])) return;
+  ndReopen();
+}
+function ndDelCopies(){
+  if(!ND||!ND._g) return; var drop=[];
+  ND._g.forEach(function(grp){ grp.forEach(function(r,ri){ if(ndIsCopy(grp,ri)) drop.push(r); }); });
+  if(!drop.length) return;
+  if(!confirm('Delete '+drop.length+' exact cop'+(drop.length>1?'ies':'y')+' (every field the same as a row above)? The first of each is kept.')) return;
+  if(ND.before) ND.before();
+  ND.delMany(drop);
+  ndReopen();
+}
+
+/* ── Registers (Cash Book, Incoming Goods, Diesel, Murum, Gitti, Loha, Cement …) ── */
+function ndLbLabel(r){ return [r.item||r.size||'', r.party||r.supplier||r.supplierName||''].filter(Boolean).join(' · ')||'—'; }
+function lbDedup(register){
+  if(!S.lb) S.lb={}; if(!S.lb[register]) S.lb[register]=[];
+  var keepBackup=function(){ try{ localStorage.setItem(KEY+'_before_dedup',JSON.stringify({register:register,rows:S.lb[register].slice(),at:new Date().toISOString()})); }catch(e){} };
+  var backedUp=false;
+  ndOpen({title:'Duplicate Review — '+((TITLES&&TITLES['lb_'+register])||register), area:(TITLES&&TITLES['lb_'+register])||register,
+    cleanMsg:'✅ No duplicates in this register',
+    groups:function(){ return ndGroupsBy(S.lb[register]||[],function(r){ return ndLbKey(register,r); }); },
+    groupLabel:function(g){ return dmy(toISO(g[0].date)||g[0].date)+' · '+ndLbLabel(g[0]); },
+    cols:['Date','Item / Party','Qty','Amount','Site','Remark'],
+    cells:function(r){ return ['<span class="mono">'+dmy(toISO(r.date)||r.date)+'</span>',esc(ndLbLabel(r)),esc(String(r.qty||r.trips||r.litres||'')+(r.unit?' '+r.unit:'')),
+      (r.amt||r.amount)?fmtC(+(r.amt||r.amount)):'',esc(r.site||''),'<span style="font-size:11px">'+esc(String(r.remark||r.status||'').slice(0,70))+'</span>']; },
+    before:function(){ if(!backedUp){ keepBackup(); backedUp=true; } },
+    del:function(r){ if(!backedUp){ keepBackup(); backedUp=true; } var ix=S.lb[register].indexOf(r); if(ix<0) return false; lbDeleteRow(register,ix); return true; },
+    delMany:function(list){ list.forEach(function(r){ var ix=S.lb[register].indexOf(r); if(ix>=0) lbDeleteRow(register,ix); });
+      logAudit('D','Register',register,'Dedup removed '+list.length+' exact copies'); save(); render(); toast('✅ Removed '+list.length+' exact cop'+(list.length>1?'ies':'y')); }
+  });
+}
+
+/* ── Machine Log ── */
+function ndMlogKey(r){
+  if(r.offsite) return null;   /* meter-gap rows ("not our work") are notes, never copies */
+  return (toISO(r.date)||r.date||'')+'|'+(r.mtype||'jcb')+'|'+(+(r.hmStart||0)).toFixed(1)+'|'+(+(r.hmEnd||0)).toFixed(1)+'|'+(+(r.hours||0)).toFixed(2)+'|'+(r.machine||'');
+}
+function ndMlogDel(r){
+  if(r.billed&&!confirm('This log is already on a hire bill ('+r.billed+'). Delete it anyway?')) return false;
+  S.machineLogs=S.machineLogs.filter(function(x){ return x!==r; });
+  logAudit('D','Machine Log',dmyS(toISO(r.date)||r.date),'Duplicate removed: '+(r.hmStart||0)+'→'+(r.hmEnd||0)+' '+(r.hours||0)+'h');
+  return true;
+}
+function mlogDedup(){
+  if(!S.machineLogs||!S.machineLogs.length){ toast('No entries',true); return; }
+  ndOpen({title:'Duplicate Review — Machine Log', area:'Machine Log',
+    cleanMsg:'✅ No duplicates in '+S.machineLogs.length+' machine-log entries',
+    groups:function(){ return ndGroupsBy(S.machineLogs,ndMlogKey); },
+    groupLabel:function(g){ var m=MACH(g[0].machine)||{}; return dmy(toISO(g[0].date)||g[0].date)+' · '+(g[0].mtype||'jcb').toUpperCase()+' '+(m.code||'')+' · meter '+(g[0].hmStart||0)+' → '+(g[0].hmEnd||0); },
+    cols:['Date','Machine','Operator','Meter','Hours','Work','Bill'],
+    cells:function(r){ var m=MACH(r.machine)||{}; return ['<span class="mono">'+dmy(toISO(r.date)||r.date)+'</span>',esc((r.mtype==='roller'?'🛞 ':'🚜 ')+(m.code||'—')),esc(r.operator||'—'),
+      '<span class="mono">'+(r.hmStart||0)+' → '+(r.hmEnd||0)+'</span>','<b>'+(r.hours||0)+'</b>',esc(String(r.work||'—').slice(0,50)),esc(r.billed||'')]; },
+    del:function(r){ if(!ndMlogDel(r)) return false; save(); render(); toast('Deleted'); return true; },
+    delMany:function(list){ var n=0; list.forEach(function(r){ if(ndMlogDel(r)) n++; }); save(); render(); toast('✅ Removed '+n+' duplicate'+(n>1?'s':'')); }
+  });
+}
+function mlogMarkNotDup(id){
+  var r=(S.machineLogs||[]).find(function(x){ return x.id===id; }); if(!r) return;
+  r._nodup=true; logAudit('U','Machine Log',dmyS(toISO(r.date)||r.date),'Marked not a duplicate');
+  save(); render(); toast('✅ Marked as a real entry — it will not be flagged as a duplicate again');
+}
+
+/* ── Trip Sheet ── */
+function ndTripKey(t){ return (t.date||'')+'|'+(t.chalan||t.src||'')+'|'+(t.cum||0); }
+function ndTripDel(t){
+  if(t.billed&&!confirm('This trip is already on a bill ('+t.billed+'). Delete it anyway?')) return false;
+  S.trips=S.trips.filter(function(x){ return x!==t; });
+  logAudit('D','Trip',t.chalan||'','Duplicate removed');
+  return true;
+}
+function tripSheetDedup(){
+  if(!S.trips||!S.trips.length){ toast('No trips'); return; }
+  ndOpen({title:'Duplicate Review — Trip Sheet', area:'Trip Sheet',
+    cleanMsg:'✅ No duplicates in '+S.trips.length+' trips',
+    groups:function(){ return ndGroupsBy(S.trips,ndTripKey); },
+    groupLabel:function(g){ return dmy(toISO(g[0].date)||g[0].date)+' · '+(g[0].chalan||g[0].src||'')+' · '+(g[0].cum||0)+' CFT'; },
+    cols:['Date','Chalan','Source','Tipper / Party','CFT','Site','Bill'],
+    cells:function(t){ return ['<span class="mono">'+dmy(toISO(t.date)||t.date)+'</span>',esc(t.chalan||''),esc(t.src||''),esc([t.tipper,t.party].filter(Boolean).join(' · ')),
+      String(t.cum||0),esc(t.site==='site-barela'?'Barela':'Bypass'),esc(t.billed||'')]; },
+    del:function(t){ if(!ndTripDel(t)) return false; save(); render(); toast('Deleted'); return true; },
+    delMany:function(list){ var n=0; list.forEach(function(t){ if(ndTripDel(t)) n++; }); save(); render(); toast('✅ Removed '+n+' duplicate'+(n>1?'s':'')); }
+  });
+}
 </script>
 
 </body>

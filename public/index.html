@@ -331,7 +331,7 @@ textarea.in{min-height:58px;resize:vertical}
   <aside id="rail">
     <div class="brand">
       <div class="mark" id="railMark">KA</div>
-      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 03-Oct 20:00</span></div>
+      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 05-Oct 14:15</span></div>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -1942,11 +1942,12 @@ function mlogDedup(){
   // Group ALL entries by date+mtype+hmStart (include nil entries too)
   var groups={};
   S.machineLogs.forEach(function(r,idx){
+    if(r.offsite) return;   /* meter-gap rows ("not our work") are notes, never copies */
     var d=toISO(r.date)||r.date||'';
     var t=r.mtype||'jcb';
-    // Normalize hmStart: 5208.0 == 5208 == "5208" — use Math.round to handle decimals
-    var s=String(Math.round(+(r.hmStart||0)));
-    var key=d+'||'+t+'||'+s;
+    /* a copy has the SAME machine, BOTH meter readings and the same hours (5208.0 == 5208, but 4579.6 ≠ 4580.3) */
+    var s=(+(r.hmStart||0)).toFixed(1);
+    var key=d+'||'+t+'||'+s+'||'+(+(r.hmEnd||0)).toFixed(1)+'||'+(+(r.hours||0)).toFixed(2)+'||'+(r.machine||'');
     if(!groups[key]) groups[key]=[];
     groups[key].push(r);
   });
@@ -1965,7 +1966,7 @@ function mlogDedup(){
     var parts=key.split('||');
     h+='<div style="margin-bottom:14px;border:1px solid rgba(220,50,50,0.4);border-radius:8px;overflow:hidden">';
     h+='<div style="background:rgba(220,50,50,0.1);padding:7px 12px;font-size:12px;font-weight:700;color:var(--crit,#e53)">'+
-      '\u26a0 Group '+(gi+1)+': '+parts[0]+' · '+(parts[1]||'').toUpperCase()+' · HM Start: '+parts[2]+'</div>';
+      '\u26a0 Group '+(gi+1)+': '+parts[0]+' · '+(parts[1]||'').toUpperCase()+' · meter '+parts[2]+' → '+parts[3]+'</div>';
     h+='<div style="overflow-x:auto"><table style="width:100%;font-size:12px;border-collapse:collapse">';
     h+='<tr style="background:var(--surface2)"><th style="padding:5px 8px">KEEP</th><th style="padding:5px 8px">Date</th><th style="padding:5px 8px">Type</th><th style="padding:5px 8px">Operator</th><th style="padding:5px 8px">HM Start</th><th style="padding:5px 8px">HM End</th><th style="padding:5px 8px">Hours</th><th style="padding:5px 8px">Work</th></tr>';
     grp.forEach(function(r,ri){

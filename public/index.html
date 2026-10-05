@@ -331,7 +331,7 @@ textarea.in{min-height:58px;resize:vertical}
   <aside id="rail">
     <div class="brand">
       <div class="mark" id="railMark">KA</div>
-      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 05-Oct 16:45</span></div>
+      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 05-Oct 18:30</span></div>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -1356,6 +1356,7 @@ const NAV=[
    ['lb_hava','Hava 600cft','trip'],
    ['lb_dumper','Dumper 300cft','trip'],
    ['lb_msand','M-Sand','stock'],
+   ['lb_sixmm','6mm (Gitti / Dust)','stock'],
    ['lb_loha','Loha (Iron)','stock'],
    ['lb_cement','Cement','stock'],
       ['lb_adhesive','Adhesive','stock'],
@@ -9621,6 +9622,7 @@ function lbAddRow(register){
   const templates={
     gitti:{date:'',party:'',qty:'600 cft',site:'Bypass',remark:''},
     msand:{date:'',party:'',qty:'600 cft',site:'Bypass',remark:''},
+    sixmm:{date:'',party:'Madan Yadav',qty:'600 cft',rate:9000,site:'Bypass',remark:''},
     hava:{date:'',trips:0,payment:'',site:'Bypass'},
     dumper:{date:'',trips:0,payment:'',site:'Bypass'},
     murum:{date:'',qty:0,remark:''},
@@ -10096,6 +10098,7 @@ function lbAddRowSite(register,site){
     var templates={
       gitti:{date:'',party:'',qty:'600 cft',site:site,remark:''},
       msand:{date:'',party:'',qty:'600 cft',site:site,remark:''},
+      sixmm:{date:'',party:'Madan Yadav',qty:'600 cft',rate:9000,site:site,remark:''},
       hava:{date:'',trips:0,payment:'',site:site},
       dumper:{date:'',trips:0,payment:'',site:site},
       murum:{date:'',qty:0,remark:'',site:site},
@@ -10282,7 +10285,7 @@ function lbRowCost(reg,r){
   if(reg==='hava'||reg==='dumper'){ var t=+r.trips||0, y=lbTripRate(r); return t&&y?R2(t*y):(t?null:0); }
   if(+r.amt) return +r.amt;
   var rate=lbNum(r.rate); var q;
-  if(reg==='gitti'||reg==='msand') q=1;
+  if(reg==='gitti'||reg==='msand'||reg==='sixmm') q=1;
   else if(reg==='blocks') q=(typeof lbMQFromQty==='function')?lbMQFromQty(r.qty):lbNum(r.qty);
   else q=lbNum(r.qty);
   if(!q) return 0;
@@ -11713,7 +11716,7 @@ const PAGES={
  audit:P_audit, settings:P_settings,
  aiscan:P_aiscan, wainbox:P_wainbox,
  lb_murum:P_lb_murum, lb_dpr:P_lb_dpr, aiinbox:P_aiinbox,
- lb_due:P_lb_due, lb_gitti:P_lb_gitti, lb_hava:P_lb_hava, lb_dumper:P_lb_dumper, lb_msand:P_lb_msand,
+ lb_due:P_lb_due, lb_gitti:P_lb_gitti, lb_hava:P_lb_hava, lb_dumper:P_lb_dumper, lb_msand:P_lb_msand, lb_sixmm:function(){ return P_lb_sixmm(); },
  lb_loha:P_lb_loha, lb_cement:P_lb_cement, lb_bindingwire:P_lb_bindingwire,
  lb_readymix:P_lb_readymix, lb_bricks:P_lb_bricks, lb_blocks:P_lb_blocks,
   lb_adhesive:P_lb_adhesive, lb_tmgitti:P_lb_tmgitti, lb_diesel:P_lb_diesel,
@@ -13110,7 +13113,7 @@ function backupExcel(){
     ]);
 
     // 6. Logbooks — one sheet each
-    const LB_LABELS={murum:'LB-Murum',gitti:'LB-Gitti',msand:'LB-M-Sand',hava:'LB-Hava',
+    const LB_LABELS={murum:'LB-Murum',gitti:'LB-Gitti',msand:'LB-M-Sand',sixmm:'LB-6mm',hava:'LB-Hava',
       dumper:'LB-Dumper',loha:'LB-Loha',cement:'LB-Cement',bindingwire:'LB-BindingWire',
       readymix:'LB-ReadyMix',bricks:'LB-Bricks',blocks:'LB-Blocks',adhesive:'LB-Adhesive',
       tmgitti:'LB-TMGitti',diesel:'LB-Diesel',incoming:'LB-Incoming',cash:'LB-Cash',bills:'LB-Bills',dpr:'LB-DPR'};
@@ -13671,6 +13674,31 @@ function incLotHint(r,col){
   }
   if(col==='amt'&&!(+r.amt)) return '<span style="'+st+'color:var(--crit)">price missing</span>';
   return '';
+}
+</script>
+<script>
+/* ═══════════ 6mm (Gitti / Dust) register ═══════════  rate list 5/9/2026: 6mm ₹9,000 a hiwa (600 cft) */
+if(typeof DUE_REGS!=='undefined'&&DUE_REGS.indexOf('sixmm')<0) DUE_REGS.push('sixmm');
+if(typeof DUE_LABEL!=='undefined') DUE_LABEL.sixmm='6mm';
+if(typeof LB_COST_UNIT!=='undefined') LB_COST_UNIT.sixmm='load';
+if(typeof LB_SEC_LABEL!=='undefined') LB_SEC_LABEL.sixmm='6mm (Gitti / Dust)';
+function P_lb_sixmm(){
+  if(!S.lb) S.lb={}; if(!S.lb.sixmm) S.lb.sixmm=[];
+  S.lb.sixmm.sort(function(a,b){return (toISO(a.date)||a.date)<(toISO(b.date)||b.date)?1:-1;});
+  var all=S.lb.sixmm, bpI=[], blI=[];
+  all.forEach(function(r,i){ (r.site==='Barela'?blI:bpI).push(i); });
+  var q=function(r){ return parseFloat(String(r.qty||'0').replace(/[^0-9.]/g,''))||0; };
+  var cft=function(ix){ return ix.reduce(function(s,i){ return s+q(all[i]); },0); };
+  var h=pageHead('6mm Gitti / Dust ('+all.length+' loads)','Rate list: 6mm ₹9,000 a hiwa (600 cft) · click any cell to edit',lbPageBtns('sixmm'));
+  h+=lbTiles([
+    {cls:'a',k:'Total Loads',v:all.length,n:cft(bpI.concat(blI)).toLocaleString()+' cft'},
+    {cls:'s',k:'Bypass',v:cft(bpI).toLocaleString()+' cft',n:bpI.length+' loads'},
+    {cls:'g',k:'Barela',v:cft(blI).toLocaleString()+' cft',n:blI.length+' loads'}]);
+  h+=lbCostTiles('sixmm',all);
+  [['Bypass',bpI],['Barela',blI]].forEach(function(x){
+    h+='<div class="card" style="margin-bottom:14px"><header><h3>6mm — '+x[0]+'</h3><span class="sub">'+x[1].length+' load'+(x[1].length===1?'':'s')+'</span></header>'+
+      lbEditableTable('sixmm',['Date','Party','Qty','Rate / load','Site','Remark'],x[1].map(function(i){return all[i];}),x[1])+lbFooter('sixmm',x[0])+'</div>'; });
+  return h;
 }
 </script>
 

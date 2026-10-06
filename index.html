@@ -331,7 +331,7 @@ textarea.in{min-height:58px;resize:vertical}
   <aside id="rail">
     <div class="brand">
       <div class="mark" id="railMark">KA</div>
-      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 06-Oct 13:15</span></div>
+      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 06-Oct 14:05</span></div>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -8930,7 +8930,7 @@ function lbIncomingCard(site){
   if(!pendRows.length&&!paidRows.length) return '';
   var pendIdxs=pendRows.map(function(r){return all.indexOf(r);});
   var paidIdxs=paidRows.map(function(r){return all.indexOf(r);});
-  var pendAmt=pendRows.reduce(function(s,r){return s+(+r.amt||0);},0);
+  var pendAmt=pendRows.reduce(function(s,r){return s+(+r.amt||0)-incPaidPart(r);},0);
   var paidAmt=paidRows.reduce(function(s,r){return s+(+r.amt||0);},0);
   var COLS=['Date','Item','Qty','Unit','Rate','Amount','Party','Status','Site','Remark'];
   var h='';
@@ -8978,6 +8978,7 @@ function P_lb_incoming(){
   var _np=all.filter(incNoPrice).length, _rp=all.filter(function(r){return incNoPrice(r)&&incRemarkPrice(r);}).length;
   var total=all.reduce(function(s,r){return s+(+r.amt||0);},0);
   var paid=all.filter(function(r){return /paid/i.test(r.status||r.paid||'');}).reduce(function(s,r){return s+(+r.amt||0);},0);
+  paid=R2(paid+all.filter(function(r){return !/paid/i.test(r.status||r.paid||'');}).reduce(function(s,r){return s+incPaidPart(r);},0));
   var pend=R2(total-paid);
   var h=pageHead('Incoming Material Register','One-time incoming materials \u00b7 Qty \u00d7 Rate = Amount \u00b7 Bypass / Barela \u00b7 click any cell to edit',
     '<button class="btn sm gh" onclick="fixAllDates()">\ud83d\udcc5 Fix Dates</button>'+
@@ -9822,7 +9823,7 @@ function lbEditableTable(register, cols, rows, realIndices){
       } else if(register==='incoming'&&k==='amt'){
         var _av=+(v||0);
         var _amtSty=_av===0?'color:var(--warn,#e88);font-weight:600':'';
-        h+='<td><span style="display:block;min-width:80px;padding:3px 5px;border-radius:4px;cursor:text;border-bottom:1px dashed var(--line);'+_amtSty+'" contenteditable="true" data-reg="'+register+'" data-lbref="'+realIdx+'" data-col="amt" onblur="lbEditRowLight(this)">'+esc(String(_av||0))+'</span>'+(!_av?incLotHint(r,'amt'):'')+'</td>';
+        h+='<td><span style="display:block;min-width:80px;padding:3px 5px;border-radius:4px;cursor:text;border-bottom:1px dashed var(--line);'+_amtSty+'" contenteditable="true" data-reg="'+register+'" data-lbref="'+realIdx+'" data-col="amt" onblur="lbEditRowLight(this)">'+esc(String(_av||0))+'</span>'+(!_av?incLotHint(r,'amt'):'')+incPartHint(r)+'</td>';
       } else if(register==='cash'&&k==='party'){
         h+='<td><span style="display:block;min-width:110px;padding:3px 5px;border-radius:4px;cursor:text;border-bottom:1px dashed var(--line)" contenteditable="true" data-reg="'+register+'" data-lbref="'+realIdx+'" data-col="party" onblur="lbEditRowLight(this)">'+esc(String(v))+'</span></td>';
       } else {
@@ -13710,6 +13711,18 @@ function dprSup(r){
   if(/absent|leave|chutti|छुट्टी|nahi aaya/i.test(rm)) return 'A';
   return 'P';
 }
+</script>
+<script>
+/* Incoming Goods partly paid: r.paidPart (from the Cash Book), or the paid share of a partly paid bill */
+function incPaidPart(r){
+  if(!r||/paid/i.test(r.status||'')) return 0;
+  if(+r.paidPart>0) return Math.min(+r.paidPart,+r.amt||0);
+  if(r.billId){ var b=(S.purchases||[]).find(function(x){ return x.id===r.billId; });
+    if(b&&+b.paid>0&&+b.net>0) return R2((+r.amt||0)*Math.min(1,(+b.paid)/(+b.net))); }
+  return 0;
+}
+function incPartHint(r){ var p=incPaidPart(r); if(!(p>0)) return '';
+  return '<span style="display:block;font-size:10px;line-height:1.3;margin-top:2px;white-space:nowrap;color:var(--good)">₹'+Math.round(p).toLocaleString('en-IN')+' paid · <b style="color:var(--crit)">₹'+Math.round((+r.amt||0)-p).toLocaleString('en-IN')+' due</b></span>'; }
 </script>
 
 </body>

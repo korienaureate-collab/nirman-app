@@ -331,7 +331,7 @@ textarea.in{min-height:58px;resize:vertical}
   <aside id="rail">
     <div class="brand">
       <div class="mark" id="railMark">KA</div>
-      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 05-Oct 18:30</span></div>
+      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 06-Oct 13:15</span></div>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -1395,7 +1395,7 @@ function renderNav(){
   NAV.forEach(g=>{ h+='<div class="navsec">'+g[0]+'</div>';
     g[1].forEach(i=>{ const b=navBadge(i[0]);
       h+='<button class="navi'+(S.ui.page===i[0]?' on':'')+'" onclick="go(\''+i[0]+'\')"><span class="ic">'+
-        (ICONS[i[2]]||'')+'</span>'+esc(i[1])+(b?'<span class="bdg">'+b+'</span>':'')+'</button>'; }); });
+        (ICONS[i[2]]||ICONS.truck||ICONS.stock||'')+'</span>'+esc(i[1])+(b?'<span class="bdg">'+b+'</span>':'')+'</button>'; }); });
   $('#nav').innerHTML=h;
 }
 function navBadge(p){
@@ -8552,17 +8552,18 @@ function P_lb_dpr(){
     idx.forEach(function(i){ var r=all[i]; dmM+=(+r.m||0); dmH+=(+r.h||0); dmB+=(+r.b||0);
       var mm=String(r.remark||'').match(/DPR\s*No\.?\s*\d+/i); if(mm) refs[mm[0].replace(/\s+/g,' ')]=1; });
     dm=dmM+dmH+dmB;
+    var sp=idx.filter(function(i){ return dprSup(all[i])==='P'; }).length;
     var dt=new Date(d+'T00:00:00'), dn=isNaN(dt)?'':DAYN[dt.getDay()]+' ';
     h+='<tr style="background:var(--surface-2)"><td colspan="8" style="padding:9px 12px;border-top:2px solid var(--line-2)">'+
        '<b style="font-family:var(--cond);font-size:15px">'+dn+dmyS(d)+'</b>'+
-       '<span class="hint" style="margin-left:10px">'+(dm?dm+' man-day'+(dm>1?'s':'')+' · '+[dmM?dmM+' M':'',dmH?dmH+' H':'',dmB?dmB+' B':''].filter(Boolean).join(' · '):'no one on site')+'</span>'+
+       '<span class="hint" style="margin-left:10px">'+(dm?dm+' man-day'+(dm>1?'s':'')+' · '+[dmM?dmM+' M':'',dmH?dmH+' H':'',dmB?dmB+' B':''].filter(Boolean).join(' · '):(sp?'no labour':'no one on site'))+(sp?' · '+sp+' supervisor'+(sp>1?'s':'')+' present':'')+'</span>'+
        (Object.keys(refs).length?'<span class="pill" style="margin-left:10px">'+esc(Object.keys(refs).join(', '))+'</span>':'')+
        '<button class="btn sm gh" style="float:right;padding:1px 8px" onclick="dprAddRow(\''+d+'\')">+ Person</button></td></tr>';
     idx.forEach(function(i){
-      var r=all[i], nil=!dprMD(r);
+      var r=all[i], sup=dprSup(r), nil=!dprMD(r)&&sup!=='P';
       var rem=String(r.remark||'').replace(/\s*·?\s*DPR\s*No\.?\s*\d+\s*/i,'').replace(/^\s*·\s*|\s*·\s*$/g,'');
       h+='<tr'+(nil?' style="opacity:.6"':'')+'>'+
-        '<td style="padding-left:22px">'+ed(i,'party',r.party,'140px')+(nil?' <span class="pill w">NIL</span>':'')+'</td>'+
+        '<td style="padding-left:22px">'+ed(i,'party',r.party,'140px')+(sup==='P'?' <span class="pill g">Present</span>':sup==='A'?' <span class="pill">Absent</span>':nil?' <span class="pill w">NIL</span>':'')+'</td>'+
         '<td>'+ed(i,'work',r.work,'100px')+'</td>'+
         '<td class="n">'+ed(i,'m',r.m,'28px','right')+'</td>'+
         '<td class="n">'+ed(i,'h',r.h,'28px','right')+'</td>'+
@@ -13699,6 +13700,15 @@ function P_lb_sixmm(){
     h+='<div class="card" style="margin-bottom:14px"><header><h3>6mm — '+x[0]+'</h3><span class="sub">'+x[1].length+' load'+(x[1].length===1?'':'s')+'</span></header>'+
       lbEditableTable('sixmm',['Date','Party','Qty','Rate / load','Site','Remark'],x[1].map(function(i){return all[i];}),x[1])+lbFooter('sixmm',x[0])+'</div>'; });
   return h;
+}
+</script>
+<script>
+/* DPR: a supervisor / staff row has no Mistri-Helper-Beldar count — it is Present or Absent, never "NIL" */
+function dprSup(r){
+  if(!r) return ''; var w=String(r.work||'')+' '+String(r.party||''), rm=String(r.remark||'');
+  if(!/supervisor|staff|munshi|engineer|manager/i.test(w)) return '';
+  if(/absent|leave|chutti|छुट्टी|nahi aaya/i.test(rm)) return 'A';
+  return 'P';
 }
 </script>
 

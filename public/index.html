@@ -331,7 +331,7 @@ textarea.in{min-height:58px;resize:vertical}
   <aside id="rail">
     <div class="brand">
       <div class="mark" id="railMark">KA</div>
-      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 06-Oct 14:05</span></div>
+      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 07-Oct 18:40</span></div>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -5634,7 +5634,7 @@ Return ONLY this JSON (no markdown, no explanation):
 • If ONE date is written at the top and rows below do NOT have their own dates, use that TOP date for EVERY row.
 • Convert ALL dates to YYYY-MM-DD (e.g. "22/9/2026" → "2026-09-22", "9/4/26" → "2026-04-09").
 
-━━ STEP 2 — READ EACH ROW ━━
+━━ NIGHT SHIFT ━━\n• One working day runs from the day into the night and the next morning. Trips with times after midnight (12:xx AM, 1 AM … morning) that are written on the same page or under the same date BELONG TO THAT WRITTEN DATE.\n• NEVER move a trip to the next date because of its clock time. Use only the date written on the page / in the row.\n\n━━ STEP 2 — READ EACH ROW ━━
 Typical columns (read left to right): DATE | NAME (supplier/party/tipper) | QTY or CUM | CHALAN NO | REMARKS
 • DATE: read the date cell. If it shows ditto marks (" or ,, or do.) → copy date from row above. If blank → use page date or last date seen. NEVER leave date blank.
 • NAME: This is the person/company who delivered the murum. Read it carefully even if it's abbreviated or in Hindi script. Examples: "MADAM YADAV", "Ram Prasad", "Shri Shiv", "M. YADAV". Put this in BOTH "supplierName" AND "party" fields.
@@ -8460,6 +8460,7 @@ function P_lb_murum(){
     {cls:'s',k:'Bypass — Hard Murum',v:inr0(cBp.amt),n:cBp.trips+' trips'+(cBp.noRate?' · '+cBp.noRateTrips+' without rate':'')},
     {cls:'g',k:'Barela — Hard Murum',v:inr0(cBl.amt),n:cBl.trips+' trips'+(mBl.length?'':' · none marked Barela yet — choose Barela in the Site column')}
   ]);
+   h+='<p class="hint" style="margin:0 0 10px">🌙 Night shift = same day: trips written after midnight stay on the date written at the top of the gate page — they are never moved to the next date.</p>';
   h+=lbDueCard('murum',all);
   h+='<div class="card"><header><h3>Hard Murum — All Entries</h3><span class="sub">Click any cell to edit · Add rows below</span></header>';
   h+=lbEditableTable('murum',['Date','M³ / Trips','Rate (₹)','Site','Page / Remark'],all,all.map(function(_,i){return i;}));
@@ -10228,14 +10229,14 @@ function lbAiAddSite(register,site){
       var b64=ev.target.result.split(',')[1];
       var mt=imgEl.files[0].type||'image/jpeg';
       callAPI([
-        {text:'This is a construction site '+register+' register. Extract ALL date entries. Site='+site+'. Return ONLY: '+schema+'. A single page can mix sections (DPR worker lines, murum trips, incoming material, \"Murum => Nil\"). Give EVERY item a \"section\": \"dpr\" for worker/labour lines ({section,date,party,work,m,h,b,remark}; m=Mistri Ⓜ, h=Helper Ⓗ, b=Beldar Ⓑ), \"murum\" for murum trips ({section,date,party,qty,remark}), \"incoming\" for any other material ({section,date,item,qty,unit,rate,amt,party,remark}), or \"'+register+'\" for lines of this register. Never put murum or worker lines in incoming. Nil/Nill = zero.'},
+        {text:'This is a construction site '+register+' register. Extract ALL date entries. Site='+site+'. Return ONLY: '+schema+'. A single page can mix sections (DPR worker lines, murum trips, incoming material, \"Murum => Nil\"). Give EVERY item a \"section\": \"dpr\" for worker/labour lines ({section,date,party,work,m,h,b,remark}; m=Mistri Ⓜ, h=Helper Ⓗ, b=Beldar Ⓑ), \"murum\" for murum trips ({section,date,party,qty,remark}), \"incoming\" for any other material ({section,date,item,qty,unit,rate,amt,party,remark}), or \"'+register+'\" for lines of this register. Never put murum or worker lines in incoming. Nil/Nill = zero. Night shift = same day: a trip written after midnight stays on the date written on the page — never move it to the next date.'},
         {inline_data:{mime_type:mt,data:b64}}
       ]);
     };
     reader.readAsDataURL(imgEl.files[0]);
     return;
   }
-  callAPI([{text:'Extract from: "'+prompt+'". Return ONLY: '+schema+'. Site='+site+'. A single page can mix sections (DPR worker lines, murum trips, incoming material, \"Murum => Nil\"). Give EVERY item a \"section\": \"dpr\" for worker/labour lines ({section,date,party,work,m,h,b,remark}; m=Mistri Ⓜ, h=Helper Ⓗ, b=Beldar Ⓑ), \"murum\" for murum trips ({section,date,party,qty,remark}), \"incoming\" for any other material ({section,date,item,qty,unit,rate,amt,party,remark}), or \"'+register+'\" for lines of this register. Never put murum or worker lines in incoming. Nil/Nill = zero.'}]);
+  callAPI([{text:'Extract from: "'+prompt+'". Return ONLY: '+schema+'. Site='+site+'. A single page can mix sections (DPR worker lines, murum trips, incoming material, \"Murum => Nil\"). Give EVERY item a \"section\": \"dpr\" for worker/labour lines ({section,date,party,work,m,h,b,remark}; m=Mistri Ⓜ, h=Helper Ⓗ, b=Beldar Ⓑ), \"murum\" for murum trips ({section,date,party,qty,remark}), \"incoming\" for any other material ({section,date,item,qty,unit,rate,amt,party,remark}), or \"'+register+'\" for lines of this register. Never put murum or worker lines in incoming. Nil/Nill = zero. Night shift = same day: a trip written after midnight stays on the date written on the page — never move it to the next date.'}]);
 }
 
 /* --- Gitti 20mm --- */
@@ -13200,7 +13201,7 @@ function backupExcel(){
    explains it and, if entries are missing, can send them to the AI Inbox for your approval.            */
 var NL_CONTEXT='I use my construction ledger app "Nirman Ledger" (Korien Aureate, Jabalpur — sites Bypass and Barela, FY 2026-27). '+
   'Rules of my books: only payments in the Cash Book (petty cash / PC) count as paid; Incoming Goods without a Cash Book payment are NOT paid; '+
-  'JCB/roller hours = meter closing − opening; JCB ₹1,000/h until 15/5/2026 and ₹1,100/h from 16/5/2026. '+
+  'Murum gate register: night and day are one day — trips after midnight stay on the date written on the gate page; JCB/roller hours = meter closing − opening; JCB ₹1,000/h until 15/5/2026 and ₹1,100/h from 16/5/2026. '+
   'If my "Nirman Ledger" connector is available, use nirman_recent to look at the related registers before you answer; if entries are missing, send them with nirman_add_entries to my AI Inbox (I approve them in the app). Never invent numbers.';
 function nlOpenClaude(text){
   var t=String(text||''); if(t.length>6500) t=t.slice(0,6500)+'\n…(cut — the rest is copied, paste it if needed)';

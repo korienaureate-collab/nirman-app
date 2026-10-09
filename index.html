@@ -331,7 +331,7 @@ textarea.in{min-height:58px;resize:vertical}
   <aside id="rail">
     <div class="brand">
       <div class="mark" id="railMark">KA</div>
-      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 09-Oct 17:45</span></div>
+      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 09-Oct 18:00</span></div>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -1322,7 +1322,7 @@ const dow=s=>new Date(s+'T00:00:00Z').getUTCDay();
 <script>
 /* ================= UI CORE ================= */
 const NAV=[
- ['Overview',[['dash','Dashboard','dash']]],
+ ['Overview',[['dash','Dashboard','dash'],['site3d','🏗 3D Site Model','site']]],
  ['Site Operations',[
    ['mlog','Machine Log — JCB','jcb'],
    ['trips','Murum & Trip Sheet','truck'],
@@ -11712,7 +11712,7 @@ function dcSuggestDates(iso,from){
 function dcSetWorkStart(v){ S.company=S.company||{}; S.company.billsFrom=v||''; logAudit('U','Company','—','Bills start from '+(v?dmyS(v):'(automatic)')); save(); render(); }
 
 const PAGES={
- dash:P_dash, mlog:P_mlog, trips:P_trips, muster:P_muster, stock:P_stock,
+ dash:P_dash, site3d:function(){ return P_site3d(); }, mlog:P_mlog, trips:P_trips, muster:P_muster, stock:P_stock,
  sales:P_sales, purch:P_purch,
  vch:P_vch, daybook:P_daybook, ledger:P_ledger, tb:P_tb, fs:P_fs,
  gst:P_gst, tds:P_tds, pay:P_pay, comp:P_comp,
@@ -13901,6 +13901,18 @@ if(typeof LB_SEC_LABEL!=='undefined'){
     if(n){ res.added.workdone=n; }
     return res;
   };
+}
+</script>
+<script>
+/* ===== 3D Site Model — PEECEE Group, NH30 bypass (rev K4), stored with the website in /site3d ===== */
+function P_site3d(){
+  var h=pageHead('3D Site Model','PEECEE Group · NH30 Bypass, Gauraiyaghat · master layout rev K4',
+    '<a class="btn sm" href="site3d/index.html" target="_blank" rel="noopener">⛶ Open full screen</a>'+
+    '<a class="btn sm" href="site3d/k4.html" target="_blank" rel="noopener">K4 without clubhouse</a>');
+  h+='<div class="card" style="padding:0;overflow:hidden"><iframe src="site3d/index.html" title="PEECEE 3D site model" '+
+     'style="display:block;width:100%;height:calc(100vh - 170px);min-height:480px;border:0;background:#0d1117" allow="fullscreen"></iframe></div>'+
+     '<p class="hint" style="margin-top:8px">Drag to turn · right-drag to move · scroll to zoom. Use the buttons in the model for views, time of day, clubhouse site and pictures.</p>';
+  return h;
 }
 </script>
 

@@ -331,7 +331,7 @@ textarea.in{min-height:58px;resize:vertical}
   <aside id="rail">
     <div class="brand">
       <div class="mark" id="railMark">KA</div>
-      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 03-Oct 19:30</span></div>
+      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 09-Oct 18:00</span></div>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -1322,7 +1322,7 @@ const dow=s=>new Date(s+'T00:00:00Z').getUTCDay();
 <script>
 /* ================= UI CORE ================= */
 const NAV=[
- ['Overview',[['dash','Dashboard','dash']]],
+ ['Overview',[['dash','Dashboard','dash'],['site3d','🏗 3D Site Model','site']]],
  ['Site Operations',[
    ['mlog','Machine Log — JCB','jcb'],
    ['trips','Murum & Trip Sheet','truck'],
@@ -1350,12 +1350,14 @@ const NAV=[
    ['m_items','Items','stock'],
    ['m_coa','Chart of Accounts','book']]],
  ['Logbook',[
+   ['workdone','📝 Work Done (daily)','note'],
    ['lb_dpr','DPR — Daily Manpower','users'],
    ['lb_murum','Hard Murum','stock'],
    ['lb_gitti','Gitti 20mm','stock'],
    ['lb_hava','Hava 600cft','trip'],
    ['lb_dumper','Dumper 300cft','trip'],
    ['lb_msand','M-Sand','stock'],
+   ['lb_sixmm','6mm (Gitti / Dust)','stock'],
    ['lb_loha','Loha (Iron)','stock'],
    ['lb_cement','Cement','stock'],
       ['lb_adhesive','Adhesive','stock'],
@@ -1394,7 +1396,7 @@ function renderNav(){
   NAV.forEach(g=>{ h+='<div class="navsec">'+g[0]+'</div>';
     g[1].forEach(i=>{ const b=navBadge(i[0]);
       h+='<button class="navi'+(S.ui.page===i[0]?' on':'')+'" onclick="go(\''+i[0]+'\')"><span class="ic">'+
-        (ICONS[i[2]]||'')+'</span>'+esc(i[1])+(b?'<span class="bdg">'+b+'</span>':'')+'</button>'; }); });
+        (ICONS[i[2]]||ICONS.truck||ICONS.stock||'')+'</span>'+esc(i[1])+(b?'<span class="bdg">'+b+'</span>':'')+'</button>'; }); });
   $('#nav').innerHTML=h;
 }
 function navBadge(p){
@@ -1873,6 +1875,7 @@ function P_mlog(){
       // Nil entries: never auto-dedup — use unique id so each is kept
       key='KEEP|'+r.id;
     }
+    if(r._nodup||r.offsite) key='KEEP|'+r.id; else if(hmS>0) key+='|'+(r.machine||'')+'|'+(+(r.hours||0)).toFixed(2);
     if(mlogSeen[key]) { mlogDupIds.add(r.id); mlogDupIds.add(mlogSeen[key]); }
     else mlogSeen[key]=r.id;
   });
@@ -1906,7 +1909,7 @@ function P_mlog(){
       var badge=hrs>0
         ?'<span style="margin-left:6px;font-size:9px;background:rgba(0,180,100,0.2);color:var(--ok,#0b6);padding:1px 6px;border-radius:20px">'+hrs.toFixed(1)+'h</span>'
         :'<span style="margin-left:6px;font-size:9px;background:rgba(255,150,0,0.15);color:var(--warn,#f90);padding:1px 6px;border-radius:20px">NIL</span>';
-      var dupBadge=mlogDupIds.has(r.id)?'<span style="margin-left:4px;font-size:9px;background:#e53;color:#fff;padding:1px 5px;border-radius:3px">DUP</span>':'';
+      var dupBadge=mlogDupIds.has(r.id)?'<span style="margin-left:4px;font-size:9px;background:#e53;color:#fff;padding:1px 5px;border-radius:3px">DUP</span><button class="btn sm" style="margin-left:3px;padding:0 6px;font-size:10px;line-height:16px" onclick="event.stopPropagation();mlogMarkNotDup(\''+r.id+'\')" title="This is a real separate entry — stop flagging it">✓ Not a dupe</button>':'';
       return '<span class="mono"'+( isNewDate?'':' style="color:var(--muted)"')+'>'+dmy(r.date)+'</span>'+(isNewDate?badge:'')+dupBadge;
     }},
     {l:'Machine',f:function(r){var m=MACH(r.machine)||{}; return (r.mtype==='roller'?'🛞 ':'🚜 ')+'<b>'+esc(m.code||'—')+'</b>';}},
@@ -1942,11 +1945,12 @@ function mlogDedup(){
   // Group ALL entries by date+mtype+hmStart (include nil entries too)
   var groups={};
   S.machineLogs.forEach(function(r,idx){
+    if(r.offsite) return;   /* meter-gap rows ("not our work") are notes, never copies */
     var d=toISO(r.date)||r.date||'';
     var t=r.mtype||'jcb';
-    // Normalize hmStart: 5208.0 == 5208 == "5208" — use Math.round to handle decimals
-    var s=String(Math.round(+(r.hmStart||0)));
-    var key=d+'||'+t+'||'+s;
+    /* a copy has the SAME machine, BOTH meter readings and the same hours (5208.0 == 5208, but 4579.6 ≠ 4580.3) */
+    var s=(+(r.hmStart||0)).toFixed(1);
+    var key=d+'||'+t+'||'+s+'||'+(+(r.hmEnd||0)).toFixed(1)+'||'+(+(r.hours||0)).toFixed(2)+'||'+(r.machine||'');
     if(!groups[key]) groups[key]=[];
     groups[key].push(r);
   });
@@ -1965,7 +1969,7 @@ function mlogDedup(){
     var parts=key.split('||');
     h+='<div style="margin-bottom:14px;border:1px solid rgba(220,50,50,0.4);border-radius:8px;overflow:hidden">';
     h+='<div style="background:rgba(220,50,50,0.1);padding:7px 12px;font-size:12px;font-weight:700;color:var(--crit,#e53)">'+
-      '\u26a0 Group '+(gi+1)+': '+parts[0]+' · '+(parts[1]||'').toUpperCase()+' · HM Start: '+parts[2]+'</div>';
+      '\u26a0 Group '+(gi+1)+': '+parts[0]+' · '+(parts[1]||'').toUpperCase()+' · meter '+parts[2]+' → '+parts[3]+'</div>';
     h+='<div style="overflow-x:auto"><table style="width:100%;font-size:12px;border-collapse:collapse">';
     h+='<tr style="background:var(--surface2)"><th style="padding:5px 8px">KEEP</th><th style="padding:5px 8px">Date</th><th style="padding:5px 8px">Type</th><th style="padding:5px 8px">Operator</th><th style="padding:5px 8px">HM Start</th><th style="padding:5px 8px">HM End</th><th style="padding:5px 8px">Hours</th><th style="padding:5px 8px">Work</th></tr>';
     grp.forEach(function(r,ri){
@@ -2280,7 +2284,7 @@ function fixTripCFT(){
   var before=R2(S.trips.reduce(function(s,t){return s+(+t.cum||0);},0));
   // Count issues
   var dups=0, seen0={};
-  S.trips.forEach(function(t){var k=(t.date||'')+'|'+(t.chalan||'')+'|'+(t.cum||0);if(seen0[k])dups++;else seen0[k]=1;});
+  S.trips.forEach(function(t){var k=(t.date||'')+'|'+(t.chalan||'')+'|'+(t.cum||0);if(t._nodup)return;if(seen0[k])dups++;else seen0[k]=1;});
   // LB- entries that are NOT Hava/Dumper (accumulated M-Sand/Gitti etc.)
   var badLB=S.trips.filter(function(t){
     if(!(t.chalan||'').startsWith('LB-')) return false;
@@ -2294,7 +2298,7 @@ function fixTripCFT(){
   if(!confirm('CFT repair on Trip Sheet\n\n• '+dups+' exact duplicate trip(s)\n• '+badLB.length+' misrouted LB- entries (M-Sand/Gitti/etc) — will be removed\n• '+bad.length+' suspicious Murum trips with CFT > 600 (total '+fmtI(badTot,0)+' CFT)\n\nFix all?')) return;
   // Step 1: remove duplicates
   var seen={},kept=[];
-  S.trips.forEach(function(t){var k=(t.date||'')+'|'+(t.chalan||'')+'|'+(t.cum||0);if(seen[k]){logAudit('D','Trip',t.chalan||'','duplicate removed by Fix CFT');return;}seen[k]=1;kept.push(t);});
+  S.trips.forEach(function(t){var k=(t.date||'')+'|'+(t.chalan||'')+'|'+(t.cum||0);if(seen[k]&&!t._nodup){logAudit('D','Trip',t.chalan||'','duplicate removed by Fix CFT');return;}seen[k]=1;kept.push(t);});
   S.trips=kept;
   // Step 2: remove ALL M-Sand/Gitti/Sand entries from Trip Sheet
   S.trips=S.trips.filter(function(t){
@@ -5631,7 +5635,7 @@ Return ONLY this JSON (no markdown, no explanation):
 • If ONE date is written at the top and rows below do NOT have their own dates, use that TOP date for EVERY row.
 • Convert ALL dates to YYYY-MM-DD (e.g. "22/9/2026" → "2026-09-22", "9/4/26" → "2026-04-09").
 
-━━ STEP 2 — READ EACH ROW ━━
+━━ NIGHT SHIFT ━━\n• One working day runs from the day into the night and the next morning. Trips with times after midnight (12:xx AM, 1 AM … morning) that are written on the same page or under the same date BELONG TO THAT WRITTEN DATE.\n• NEVER move a trip to the next date because of its clock time. Use only the date written on the page / in the row.\n\n━━ STEP 2 — READ EACH ROW ━━
 Typical columns (read left to right): DATE | NAME (supplier/party/tipper) | QTY or CUM | CHALAN NO | REMARKS
 • DATE: read the date cell. If it shows ditto marks (" or ,, or do.) → copy date from row above. If blank → use page date or last date seen. NEVER leave date blank.
 • NAME: This is the person/company who delivered the murum. Read it carefully even if it's abbreviated or in Hindi script. Examples: "MADAM YADAV", "Ram Prasad", "Shri Shiv", "M. YADAV". Put this in BOTH "supplierName" AND "party" fields.
@@ -5727,7 +5731,7 @@ A handwritten site page often mixes sections, e.g. a DPR worker list, then an "I
 Add a "section" field to EVERY lineItem saying which register that ONE line belongs to:
   "dpr"      = worker / contractor / labour line — e.g. "Dhruv Upadhyay welding work 21/9/2026 - 1 Ⓜ 1 Ⓗ", "Company Labour - 1 Ⓑ"
                → {"section":"dpr","date":"YYYY-MM-DD","party":"name","work":"Welding","m":1,"h":1,"b":0,"remark":""}
-               Ⓜ/M = Mistri, Ⓗ/H = Helper, Ⓑ/B = Beldar (labour), Ⓢ/S = Supervisor → "s". "Nil"/"Nill" → m=h=b=s=0, remark "NIL".
+               Ⓜ/M = Mistri, Ⓗ/H = Helper, Ⓑ/B = Beldar (labour). "Nil"/"Nill" → m=h=b=0, remark "NIL".
   "murum"    = ANY murum / murrum / earth trip line — e.g. "22/9/2026 (Madan Yadav) 3 Trip Murum", "Murum => Nill"
                → {"section":"murum","date":"YYYY-MM-DD","party":"Madan Yadav","qty":3,"remark":""}   (Nil → qty 0, remark "NIL")
   "incoming" = any OTHER material received — hardware, bathroom fittings, electricals, pipes…
@@ -8457,6 +8461,7 @@ function P_lb_murum(){
     {cls:'s',k:'Bypass — Hard Murum',v:inr0(cBp.amt),n:cBp.trips+' trips'+(cBp.noRate?' · '+cBp.noRateTrips+' without rate':'')},
     {cls:'g',k:'Barela — Hard Murum',v:inr0(cBl.amt),n:cBl.trips+' trips'+(mBl.length?'':' · none marked Barela yet — choose Barela in the Site column')}
   ]);
+   h+='<p class="hint" style="margin:0 0 10px">🌙 Night shift = same day: trips written after midnight stay on the date written at the top of the gate page — they are never moved to the next date.</p>';
   h+=lbDueCard('murum',all);
   h+='<div class="card"><header><h3>Hard Murum — All Entries</h3><span class="sub">Click any cell to edit · Add rows below</span></header>';
   h+=lbEditableTable('murum',['Date','M³ / Trips','Rate (₹)','Site','Page / Remark'],all,all.map(function(_,i){return i;}));
@@ -8467,16 +8472,15 @@ function P_lb_murum(){
 
 /* ================= DPR — Daily Progress Report (manpower) =================
    One row per worker / contractor per day.
-   m = Mistri (skilled, Ⓜ)  ·  h = Helper (Ⓗ)  ·  b = Beldar / labour (Ⓑ)  ·  s = Supervisor (Ⓢ)       */
-function dprMD(r){ return (+r.m||0)+(+r.h||0)+(+r.b||0)+(+r.s||0); }
+   m = Mistri (skilled, Ⓜ)  ·  h = Helper (Ⓗ)  ·  b = Beldar / labour (Ⓑ)       */
+function dprMD(r){ return (+r.m||0)+(+r.h||0)+(+r.b||0); }
 function dprWageForm(){
   var w=(S.company&&S.company.wages)||{};
   var m=prompt('Mistri (M) — wage per day ₹',w.m||''); if(m===null) return;
   var h=prompt('Helper (H) — wage per day ₹',w.h||''); if(h===null) return;
   var b=prompt('Beldar / labour (B) — wage per day ₹',w.b||''); if(b===null) return;
-  var sv=prompt('Supervisor (S) — wage per day ₹ (leave blank if salaried)',w.s||''); if(sv===null) return;
-  S.company=S.company||{}; S.company.wages={m:lbNum(m),h:lbNum(h),b:lbNum(b),s:lbNum(sv)};
-  logAudit('U','Company','Wages','Daily wage rates M ₹'+S.company.wages.m+' · H ₹'+S.company.wages.h+' · B ₹'+S.company.wages.b+' · S ₹'+S.company.wages.s); save(); render();
+  S.company=S.company||{}; S.company.wages={m:lbNum(m),h:lbNum(h),b:lbNum(b)};
+  logAudit('U','Company','Wages','Daily wage rates M ₹'+S.company.wages.m+' · H ₹'+S.company.wages.h+' · B ₹'+S.company.wages.b); save(); render();
 }
 function P_lb_dpr(){
   if(!S.lb) S.lb={};
@@ -8490,21 +8494,20 @@ function P_lb_dpr(){
   var all=S.lb.dpr;
   var view=S.ui.dprView||'day';
   var sum=function(k){return all.reduce(function(s,r){return s+(+r[k]||0);},0);};
-  var M=sum('m'),H=sum('h'),B=sum('b'),SV=sum('s');
-  var byDate={}, workBy={}; all.forEach(function(r,i){ var d=r.date||'—'; if(dprIsWork(r)){ (workBy[d]=workBy[d]||[]).push(i); if(!byDate[d]) byDate[d]=[]; return; } (byDate[d]=byDate[d]||[]).push(i); });
+  var M=sum('m'),H=sum('h'),B=sum('b');
+  var byDate={}; all.forEach(function(r,i){ var d=r.date||'—'; (byDate[d]=byDate[d]||[]).push(i); });
   var dates=Object.keys(byDate).sort().reverse();
-  var h=pageHead('DPR — Daily Manpower','Who worked on site each day · M = Mistri · H = Helper · B = Beldar · S = Supervisor',
+  var h=pageHead('DPR — Daily Manpower','Who worked on site each day · M = Mistri · H = Helper · B = Beldar',
     '<button class="btn pri" onclick="dprNewDay()">+ New day</button>'+
     '<button class="btn sm" onclick="lbDedup(\'dpr\')">🧹 Dedup</button>'+lbUndoBtn('dpr')+
     '<button class="btn sm" onclick="expDprCSV()">Export CSV</button>');
   h+=lbTiles([
-    {cls:'a',k:'Total man-days',v:fmtI(M+H+B+SV,0),n:dates.length+' days on record'},
+    {cls:'a',k:'Total man-days',v:fmtI(M+H+B,0),n:dates.length+' days on record'},
     {cls:'s',k:'Mistri (M)',v:fmtI(M,0),n:'skilled man-days'},
     {cls:'g',k:'Helper (H)',v:fmtI(H,0),n:'helper man-days'},
     {cls:'w',k:'Beldar (B)',v:fmtI(B,0),n:'labour man-days'},
-    {cls:'s',k:'Supervisor (S)',v:fmtI(SV,0),n:'supervisor days'},
-    (function(){ var w=(S.company&&S.company.wages)||{}; var c=M*(+w.m||0)+H*(+w.h||0)+B*(+w.b||0)+SV*(+w.s||0);
-      return {cls:'a',k:'Labour Cost',v:(w.m||w.h||w.b)?inr0(c):'—',n:(w.m||w.h||w.b)?'M ₹'+(+w.m||0)+' · H ₹'+(+w.h||0)+' · B ₹'+(+w.b||0)+(+w.s?' · S ₹'+(+w.s):'')+' per day · <a href="#" onclick="dprWageForm();return false">change</a>':'<a href="#" onclick="dprWageForm();return false">Set daily wage rates</a> to see the cost'}; })()
+    (function(){ var w=(S.company&&S.company.wages)||{}; var c=M*(+w.m||0)+H*(+w.h||0)+B*(+w.b||0);
+      return {cls:'a',k:'Labour Cost',v:(w.m||w.h||w.b)?inr0(c):'—',n:(w.m||w.h||w.b)?'M ₹'+(+w.m||0)+' · H ₹'+(+w.h||0)+' · B ₹'+(+w.b||0)+' per day · <a href="#" onclick="dprWageForm();return false">change</a>':'<a href="#" onclick="dprWageForm();return false">Set daily wage rates</a> to see the cost'}; })()
   ]);
   h+='<div class="tabs">'+[['day','Day-wise'],['person','By worker / contractor']]
     .map(function(t){return '<button class="tab'+(view===t[0]?' on':'')+'" onclick="S.ui.dprView=\''+t[0]+'\';render()">'+t[1]+'</button>';}).join('')+'</div>';
@@ -8512,11 +8515,10 @@ function P_lb_dpr(){
   if(view==='person'){
     var byP={};
     all.forEach(function(r){
-      if(dprIsWork(r)) return;
       var p=String(r.party||'—').trim()||'—';
-      if(!byP[p]) byP[p]={m:0,h:0,b:0,s:0,days:{},nil:0,first:'',last:'',work:''};
+      if(!byP[p]) byP[p]={m:0,h:0,b:0,days:{},nil:0,first:'',last:'',work:''};
       var x=byP[p], d=r.date||'';
-      x.m+=(+r.m||0); x.h+=(+r.h||0); x.b+=(+r.b||0); x.s+=(+r.s||0);
+      x.m+=(+r.m||0); x.h+=(+r.h||0); x.b+=(+r.b||0);
       if(dprMD(r)>0) x.days[d]=1; else x.nil++;
       if(d&&(!x.first||d<x.first)) x.first=d;
       if(d&&(!x.last||d>x.last)) x.last=d;
@@ -8524,11 +8526,11 @@ function P_lb_dpr(){
     });
     var names=Object.keys(byP).sort();
     h+='<div class="card"><header><h3>By worker / contractor</h3><span class="sub">Use this when settling a contractor\'s days</span></header>'+
-      '<div class="tw"><table class="t"><thead><tr><th>Name</th><th>Work</th><th>Period</th><th class="n">Days worked</th><th class="n">NIL days</th><th class="n">M</th><th class="n">H</th><th class="n">B</th><th class="n">S</th><th class="n">Man-days</th></tr></thead><tbody>'+
+      '<div class="tw"><table class="t"><thead><tr><th>Name</th><th>Work</th><th>Period</th><th class="n">Days worked</th><th class="n">NIL days</th><th class="n">M</th><th class="n">H</th><th class="n">B</th><th class="n">Man-days</th></tr></thead><tbody>'+
       (names.length?names.map(function(p){ var x=byP[p]; return '<tr><td><b>'+esc(p)+'</b></td><td>'+esc(x.work||'—')+'</td><td class="mono">'+dmyS(x.first)+' – '+dmyS(x.last)+'</td>'+
         '<td class="n">'+Object.keys(x.days).length+'</td><td class="n">'+(x.nil||'—')+'</td>'+
-        '<td class="n">'+(x.m||'—')+'</td><td class="n">'+(x.h||'—')+'</td><td class="n">'+(x.b||'—')+'</td><td class="n">'+(x.s||'—')+'</td><td class="n"><b>'+(x.m+x.h+x.b+x.s)+'</b></td></tr>'; }).join('')
-        :'<tr><td colspan="10" class="hint">No entries yet</td></tr>')+
+        '<td class="n">'+(x.m||'—')+'</td><td class="n">'+(x.h||'—')+'</td><td class="n">'+(x.b||'—')+'</td><td class="n"><b>'+(x.m+x.h+x.b)+'</b></td></tr>'; }).join('')
+        :'<tr><td colspan="9" class="hint">No entries yet</td></tr>')+
       '</tbody></table></div></div>';
     return h;
   }
@@ -8536,7 +8538,7 @@ function P_lb_dpr(){
   /* ── Day-wise: one block per date, like the paper DPR ── */
   var DAYN=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   var ed=function(i,k,v,w,align){
-    var z=(k==='m'||k==='h'||k==='b'||k==='s')&&!(+v);
+    var z=(k==='m'||k==='h'||k==='b')&&!(+v);
     return '<span contenteditable="true" onblur="dprEdit('+i+',\''+k+'\',this)" style="display:inline-block;min-width:'+w+';padding:2px 5px;border-radius:4px;cursor:text;border-bottom:1px dashed var(--line);'+
       (align?'text-align:'+align+';':'')+(z?'color:var(--faint)':'')+'">'+esc(String(z?'–':(v==null?'':v)))+'</span>';
   };
@@ -8545,33 +8547,29 @@ function P_lb_dpr(){
     return h;
   }
   h+='<div class="card"><div class="tw"><table class="t dpr-t"><thead><tr>'+
-     '<th>Name / Contractor</th><th>Work</th><th class="n" style="width:60px">M</th><th class="n" style="width:60px">H</th><th class="n" style="width:60px">B</th><th class="n" style="width:60px">S</th><th>Site</th><th>Remark</th><th style="width:40px"></th></tr></thead><tbody>';
+     '<th>Name / Contractor</th><th>Work</th><th class="n" style="width:60px">M</th><th class="n" style="width:60px">H</th><th class="n" style="width:60px">B</th><th>Site</th><th>Remark</th><th style="width:40px"></th></tr></thead><tbody>';
   dates.forEach(function(d){
     var idx=byDate[d];
-    var dm=0,dmM=0,dmH=0,dmB=0,dmS=0,refs={};
-    idx.forEach(function(i){ var r=all[i]; dmM+=(+r.m||0); dmH+=(+r.h||0); dmB+=(+r.b||0); dmS+=(+r.s||0);
+    var dm=0,dmM=0,dmH=0,dmB=0,refs={};
+    idx.forEach(function(i){ var r=all[i]; dmM+=(+r.m||0); dmH+=(+r.h||0); dmB+=(+r.b||0);
       var mm=String(r.remark||'').match(/DPR\s*No\.?\s*\d+/i); if(mm) refs[mm[0].replace(/\s+/g,' ')]=1; });
-    dm=dmM+dmH+dmB+dmS;
+    dm=dmM+dmH+dmB;
+    var sp=idx.filter(function(i){ return dprSup(all[i])==='P'; }).length;
     var dt=new Date(d+'T00:00:00'), dn=isNaN(dt)?'':DAYN[dt.getDay()]+' ';
-    h+='<tr style="background:var(--surface-2)"><td colspan="9" style="padding:9px 12px;border-top:2px solid var(--line-2)">'+
+    h+='<tr style="background:var(--surface-2)"><td colspan="8" style="padding:9px 12px;border-top:2px solid var(--line-2)">'+
        '<b style="font-family:var(--cond);font-size:15px">'+dn+dmyS(d)+'</b>'+
-       '<span class="hint" style="margin-left:10px">'+(dm?dm+' man-day'+(dm>1?'s':'')+' · '+[dmM?dmM+' M':'',dmH?dmH+' H':'',dmB?dmB+' B':'',dmS?dmS+' S':''].filter(Boolean).join(' · '):'no one on site')+'</span>'+
+       '<span class="hint" style="margin-left:10px">'+(dm?dm+' man-day'+(dm>1?'s':'')+' · '+[dmM?dmM+' M':'',dmH?dmH+' H':'',dmB?dmB+' B':''].filter(Boolean).join(' · '):(sp?'no labour':'no one on site'))+(sp?' · '+sp+' supervisor'+(sp>1?'s':'')+' present':'')+'</span>'+
        (Object.keys(refs).length?'<span class="pill" style="margin-left:10px">'+esc(Object.keys(refs).join(', '))+'</span>':'')+
-       '<button class="btn sm gh" style="float:right;padding:1px 8px" onclick="dprAddRow(\''+d+'\')">+ Person</button>'+
-       '<button class="btn sm gh" style="float:right;padding:1px 8px;margin-right:6px" onclick="dprWorkEdit(\''+d+'\')">✎ Work done</button></td></tr>'+
-       ((workBy[d]||[]).length?'<tr><td colspan="9" style="padding:6px 12px 8px 22px;background:var(--surface-2)"><b>🛠 Work done:</b> '+
-         workBy[d].map(function(i){ var r=all[i]; return '<span style="cursor:pointer" title="Click to edit" onclick="dprWorkEdit(\''+d+'\','+i+')">'+esc(r.work||r.remark||'')+'</span>'+
-           ' <button class="btn sm dngr gh" style="padding:0 6px" onclick="lbDeleteRow(\'dpr\','+i+')">✕</button>'; }).join(' · ')+'</td></tr>':'');
+       '<button class="btn sm gh" style="float:right;padding:1px 8px" onclick="dprAddRow(\''+d+'\')">+ Person</button></td></tr>';
     idx.forEach(function(i){
-      var r=all[i], nil=!dprMD(r);
+      var r=all[i], sup=dprSup(r), nil=!dprMD(r)&&sup!=='P';
       var rem=String(r.remark||'').replace(/\s*·?\s*DPR\s*No\.?\s*\d+\s*/i,'').replace(/^\s*·\s*|\s*·\s*$/g,'');
       h+='<tr'+(nil?' style="opacity:.6"':'')+'>'+
-        '<td style="padding-left:22px">'+ed(i,'party',r.party,'140px')+(nil?' <span class="pill w">NIL</span>':'')+'</td>'+
+        '<td style="padding-left:22px">'+ed(i,'party',r.party,'140px')+(sup==='P'?' <span class="pill g">Present</span>':sup==='A'?' <span class="pill">Absent</span>':nil?' <span class="pill w">NIL</span>':'')+'</td>'+
         '<td>'+ed(i,'work',r.work,'100px')+'</td>'+
         '<td class="n">'+ed(i,'m',r.m,'28px','right')+'</td>'+
         '<td class="n">'+ed(i,'h',r.h,'28px','right')+'</td>'+
         '<td class="n">'+ed(i,'b',r.b,'28px','right')+'</td>'+
-        '<td class="n">'+ed(i,'s',r.s,'28px','right')+'</td>'+
         '<td><select class="lb-sel lb-sel-site" onchange="lbEditRow(\'dpr\','+i+',\'site\',this.value);render()">'+
           '<option value="Bypass"'+(r.site!=='Barela'?' selected':'')+'>Bypass</option><option value="Barela"'+(r.site==='Barela'?' selected':'')+'>Barela</option></select></td>'+
         '<td>'+ed(i,'remark',rem==='NIL'?'':rem,'90px')+'</td>'+
@@ -8584,32 +8582,21 @@ function P_lb_dpr(){
   h+='</div>';
   return h;
 }
-function dprIsWork(r){ return /^work\s*done$/i.test(String(r&&r.party||'').trim()); }
-function dprWorkEdit(date,i){
-  /* Work done for a day — kept as a DPR row named "Work done" (no manpower) so it travels with the AI Inbox and backups */
-  if(!S.lb.dpr) S.lb.dpr=[];
-  var r=(i!=null)?S.lb.dpr[i]:null;
-  var t=prompt('Work done on '+dmyS(date)+' (e.g. 9 solar lights fitted · 4 light points made):',r?(r.work||''):'');
-  if(t===null) return; t=t.trim();
-  if(r){ if(!t){ S.lb.dpr.splice(i,1); } else r.work=t; }
-  else if(t) S.lb.dpr.push({date:date,party:'Work done',work:t,m:0,h:0,b:0,s:0,site:'Bypass',remark:''});
-  logAudit('U','DPR',dmyS(date),'Work done: '+(t||'(removed)')); save(); render();
-}
 function dprEdit(i,k,el){
   var r=S.lb&&S.lb.dpr&&S.lb.dpr[i]; if(!r) return;
   var v=el.textContent.trim();
-  if(k==='m'||k==='h'||k==='b'||k==='s'){ v=(v==='–'||v==='-'||v==='')?0:(parseFloat(v)||0); }
+  if(k==='m'||k==='h'||k==='b'){ v=(v==='–'||v==='-'||v==='')?0:(parseFloat(v)||0); }
   if(k==='remark'){
     var ref=String(r.remark||'').match(/DPR\s*No\.?\s*\d+/i);      // keep the page reference
     v=[v,ref?ref[0]:''].filter(Boolean).join(' · ');
-    if(/^nil$/i.test(el.textContent.trim())){ r.m=0;r.h=0;r.b=0;r.s=0; }
+    if(/^nil$/i.test(el.textContent.trim())){ r.m=0;r.h=0;r.b=0; }
   }
   if(String(r[k])===String(v)) return;
   r[k]=v; save(); render();
 }
 function dprAddRow(date){
   if(!S.lb.dpr) S.lb.dpr=[];
-  S.lb.dpr.push({date:date||today(),party:'',work:'',m:0,h:0,b:0,s:0,site:'Bypass',remark:''});
+  S.lb.dpr.push({date:date||today(),party:'',work:'',m:0,h:0,b:0,site:'Bypass',remark:''});
   save(); render();
 }
 function dprNewDay(){
@@ -8624,15 +8611,15 @@ function dprNewDay(){
   if(!crew.length){ dprAddRow(iso); return; }
   crew.forEach(function(r){
     var was=dprMD(r)?r:(S.lb.dpr.filter(function(x){return x.party===r.party&&dprMD(x);}).sort(function(a,b){return a.date<b.date?1:-1;})[0]||r);
-    S.lb.dpr.push({date:iso,party:r.party,work:r.work,m:+was.m||0,h:+was.h||0,b:+was.b||0,s:+was.s||0,site:r.site||'Bypass',remark:''});
+    S.lb.dpr.push({date:iso,party:r.party,work:r.work,m:+was.m||0,h:+was.h||0,b:+was.b||0,site:r.site||'Bypass',remark:''});
   });
   logAudit('C','DPR',dmyS(iso),crew.length+' rows copied from '+dmyS(last));
   save(); render();
   toast('Added '+crew.length+' rows for '+dmyS(iso)+' — edit anyone who was absent (type NIL in remark)');
 }
 function expDprCSV(){
-  var rows=[['Date','Name / Contractor','Work','Mistri (M)','Helper (H)','Beldar (B)','Supervisor (S)','Man-days','Site','Remark']];
-  (S.lb&&S.lb.dpr||[]).forEach(function(r){ rows.push([r.date,r.party||'',r.work||'',+r.m||0,+r.h||0,+r.b||0,+r.s||0,dprMD(r),r.site||'',r.remark||'']); });
+  var rows=[['Date','Name / Contractor','Work','Mistri (M)','Helper (H)','Beldar (B)','Man-days','Site','Remark']];
+  (S.lb&&S.lb.dpr||[]).forEach(function(r){ rows.push([r.date,r.party||'',r.work||'',+r.m||0,+r.h||0,+r.b||0,dprMD(r),r.site||'',r.remark||'']); });
   dl('KAPL_DPR_manpower_'+today()+'.csv',csv(rows),'text/csv');
   toast('DPR exported');
 }
@@ -8649,11 +8636,11 @@ var LB_SEC_ALIAS={dpr:'dpr',manpower:'dpr',labour:'dpr',labor:'dpr',worker:'dpr'
   incoming:'incoming',incominggoods:'incoming',material:'incoming',incomingmaterial:'incoming',goods:'incoming',
   msand:'msand',gitti:'gitti',hava:'hava',dumper:'dumper',loha:'loha',steel:'loha',cement:'cement',
   bindingwire:'bindingwire',readymix:'readymix',bricks:'bricks',blocks:'blocks',adhesive:'adhesive',
-  tmgitti:'tmgitti',diesel:'diesel',cash:'cash',cashbook:'cash',pc:'cash',pccontractor:'cash',pcpayment:'cash',pcpayments:'cash',pettycontractor:'cash',contractorpayment:'cash',payment:'cash',
+  tmgitti:'tmgitti',diesel:'diesel',cash:'cash',
   mlog:'mlog',machine:'mlog',machinelog:'mlog',jcb:'mlog',roller:'mlog',hourmeter:'mlog'};
 var LB_SEC_LABEL={dpr:'DPR — Manpower',murum:'Hard Murum',incoming:'Incoming Goods',msand:'M-Sand',gitti:'Gitti 20mm',
   hava:'Hava',dumper:'Dumper',loha:'Loha',cement:'Cement',bindingwire:'Binding Wire',readymix:'Readymix',bricks:'Bricks',
-  blocks:'Blocks',adhesive:'Adhesive',tmgitti:'T.M. Gitti',diesel:'Diesel',cash:'Cash Book / PC Contractor',mlog:'Machine Log (JCB / Roller)'};
+  blocks:'Blocks',adhesive:'Adhesive',tmgitti:'T.M. Gitti',diesel:'Diesel',cash:'Cash Book',mlog:'Machine Log (JCB / Roller)'};
 function lbSectionOf(it,def){
   var s=String(it.section||it.register||'').toLowerCase().replace(/[^a-z]/g,'');
   if(LB_SEC_ALIAS[s]) return LB_SEC_ALIAS[s];
@@ -8676,8 +8663,8 @@ function lbShapeRow(sec,it,site){
     var cnt=String(it.count||it.manpower||it.qty||'');
     var pick=function(a,b,L){ var v=it[a]!=null&&it[a]!==''?it[a]:it[b]; if(v!=null&&v!=='') return lbNum(v);
       var mm=cnt.match(new RegExp('(\\d+)\\s*\\(?\\s*'+L+'\\b','i')); return mm?+mm[1]:0; };
-    var row={date:d,party:party,work:String(it.work||it.item||'').trim(),m:pick('m','mistri','M'),h:pick('h','helper','H'),b:pick('b','beldar','B'),s:pick('s','supervisor','S'),site:st,remark:rem};
-    if(nil){ row.m=0; row.h=0; row.b=0; row.s=0; row.remark=addNil(row.remark); }
+    var row={date:d,party:party,work:String(it.work||it.item||'').trim(),m:pick('m','mistri','M'),h:pick('h','helper','H'),b:pick('b','beldar','B'),site:st,remark:rem};
+    if(nil){ row.m=0; row.h=0; row.b=0; row.remark=addNil(row.remark); }
     return row;
   }
   if(sec==='murum'){
@@ -8713,7 +8700,7 @@ function lbRowExists(sec,row){
   var p6=function(x){return String(x||'').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,6);};
   return list.some(function(r){
     if((toISO(r.date)||r.date||'')!==d) return false;
-    if(sec==='dpr'){ var nm=function(x){return String(x||'').toLowerCase().replace(/[^a-z0-9]/g,'');}; return nm(r.party)===nm(row.party); }   // full name — 'Camera Technician' ≠ 'Camera Fitters'
+    if(sec==='dpr') return p6(r.party)===p6(row.party);
     if(sec==='mlog') return (r.mtype||'jcb')===row.mtype&&(lbNum(r.hmStart)===lbNum(row.hmStart)||(!lbNum(row.hmStart)&&lbNum(r.hours)===lbNum(row.hours)));
     if(sec==='murum') return !lbNum(row.qty) || lbNum(r.qty)===lbNum(row.qty);   // a NIL line is redundant if the day already has a row
     if(sec==='incoming'){ var n=function(x){return String(x||'').toLowerCase().replace(/[^a-z0-9]/g,'');};
@@ -8753,7 +8740,7 @@ function lbCommitRows(list){
 }
 function lbMixSummary(sec,r){
   if(sec==='dpr') return '<b>'+esc(r.party||'—')+'</b>'+(r.work?' · '+esc(r.work):'')+' — '+
-    (dprIsWork(r)?'<span class="pill">🛠 work done</span>':dprMD(r)?[r.m?r.m+' M':'',r.h?r.h+' H':'',r.b?r.b+' B':'',r.s?r.s+' S':''].filter(Boolean).join(' '):'<span class="pill w">NIL</span>');
+    (dprMD(r)?[r.m?r.m+' M':'',r.h?r.h+' H':'',r.b?r.b+' B':''].filter(Boolean).join(' '):'<span class="pill w">NIL</span>');
   if(sec==='murum') return (lbNum(r.qty)?'<b>'+r.qty+' trips</b>':'<span class="pill w">NIL</span>')+(r.party?' · '+esc(r.party):'');
   if(sec==='incoming') return '<b>'+esc(r.item||'—')+'</b> · '+r.qty+' '+esc(r.unit||'')+(r.party?' · '+esc(r.party):'')+(r.rate?' · ₹'+fmtI(r.amt,0):' · <span class="hint">rate to fill</span>');
   if(sec==='cash') return '<b>₹'+fmtI(r.amt,0)+'</b> · '+esc(r.party||r.remark||'');
@@ -8791,7 +8778,7 @@ function lbMixRender(){
           '<td style="width:132px"><input class="in mono" style="width:118px;padding:2px 5px;font-size:12px;'+(ck.ok?'':'border-color:var(--crit);color:var(--crit)')+'" value="'+dmyS(x.row.date)+'" onchange="lbMixSetDate('+i+',this.value)">'+
             dateWarnHtml(ck,"lbMixSetDate("+i+",'$D')")+'</td>'+
           '<td>'+lbMixSummary(sec,x.row)+(x.dup?' <span class="pill">already in register</span>':'')+'</td>'+
-          '<td style="width:190px"><select class="in" style="padding:2px 4px;font-size:12px" onchange="lbMixMove('+i+',this.value)">'+
+          '<td style="width:150px"><select class="in" style="padding:2px 4px;font-size:12px" onchange="lbMixMove('+i+',this.value)">'+
             Object.keys(LB_SEC_LABEL).map(function(k){return '<option value="'+k+'"'+(k===sec?' selected':'')+'>'+esc(LB_SEC_LABEL[k])+'</option>';}).join('')+
           '</select></td></tr>'; }).join('')+
       '</tbody></table></div>';
@@ -8843,7 +8830,8 @@ var CLAUDE_IMPORT_PROMPT=[
  'You are helping me enter site records into my construction ledger app "Nirman Ledger" (Korien Aureate, Bypass & Barela sites, Jabalpur).',
  'Read what I attach or type below and reply with ONE code block that starts with the line NIRMAN-IMPORT followed by a JSON array.',
  'Every item needs "section" and "date" (YYYY-MM-DD). Sections and fields:',
- '- "dpr": worker/contractor attendance {party, work, m, h, b, s, site, remark}  (m = Mistri Ⓜ, h = Helper Ⓗ, b = Beldar Ⓑ, s = Supervisor Ⓢ; NIL → 0,0,0,0 and remark "NIL")',
+ '- "workdone": what work was finished that day (no manpower) {text, site} — one job per item, e.g. {"section":"workdone","date":"2026-10-09","text":"9 solar lights fitted"}',
+ '- "dpr": worker/contractor attendance {party, work, m, h, b, site, remark}  (m = Mistri Ⓜ, h = Helper Ⓗ, b = Beldar Ⓑ; NIL → 0,0,0 and remark "NIL")',
  '- "murum": {party, qty (trips), remark, site}   (NIL → qty 0, remark "NIL")',
  '- "incoming": any other material received {item, qty, unit, rate, amt, party, site, remark}',
  '- "mlog": JCB / roller hours {mtype:"jcb"|"roller", hmStart, hmEnd, hours, work, site}',
@@ -8945,7 +8933,7 @@ function lbIncomingCard(site){
   if(!pendRows.length&&!paidRows.length) return '';
   var pendIdxs=pendRows.map(function(r){return all.indexOf(r);});
   var paidIdxs=paidRows.map(function(r){return all.indexOf(r);});
-  var pendAmt=pendRows.reduce(function(s,r){return s+(+r.amt||0);},0);
+  var pendAmt=pendRows.reduce(function(s,r){return s+(+r.amt||0)-incPaidPart(r);},0);
   var paidAmt=paidRows.reduce(function(s,r){return s+(+r.amt||0);},0);
   var COLS=['Date','Item','Qty','Unit','Rate','Amount','Party','Status','Site','Remark'];
   var h='';
@@ -8993,6 +8981,7 @@ function P_lb_incoming(){
   var _np=all.filter(incNoPrice).length, _rp=all.filter(function(r){return incNoPrice(r)&&incRemarkPrice(r);}).length;
   var total=all.reduce(function(s,r){return s+(+r.amt||0);},0);
   var paid=all.filter(function(r){return /paid/i.test(r.status||r.paid||'');}).reduce(function(s,r){return s+(+r.amt||0);},0);
+  paid=R2(paid+all.filter(function(r){return !/paid/i.test(r.status||r.paid||'');}).reduce(function(s,r){return s+incPaidPart(r);},0));
   var pend=R2(total-paid);
   var h=pageHead('Incoming Material Register','One-time incoming materials \u00b7 Qty \u00d7 Rate = Amount \u00b7 Bypass / Barela \u00b7 click any cell to edit',
     '<button class="btn sm gh" onclick="fixAllDates()">\ud83d\udcc5 Fix Dates</button>'+
@@ -9638,6 +9627,7 @@ function lbAddRow(register){
   const templates={
     gitti:{date:'',party:'',qty:'600 cft',site:'Bypass',remark:''},
     msand:{date:'',party:'',qty:'600 cft',site:'Bypass',remark:''},
+    sixmm:{date:'',party:'Madan Yadav',qty:'600 cft',rate:9000,site:'Bypass',remark:''},
     hava:{date:'',trips:0,payment:'',site:'Bypass'},
     dumper:{date:'',trips:0,payment:'',site:'Bypass'},
     murum:{date:'',qty:0,remark:''},
@@ -9793,7 +9783,7 @@ function lbEditableTable(register, cols, rows, realIndices){
   var h='<div class="tw" style="overflow-x:auto"><table class="t"><thead><tr>';
   cols.forEach(function(c){h+='<th>'+c+'</th>';});
   h+='<th style="width:40px"></th></tr></thead><tbody>';
-  var COLM={'Rate / load':'rate','Rate / kg':'rate','Rate / bag':'rate','Rate / M³':'rate','Rate / 1000':'rate','Rate / L':'rate','Cost (₹)':'amount','Date':'date','Supplier':'party','ID':'id','Item':'item','Name / Contractor':'party','Qty':'qty','Unit':'unit','Rate':'rate','Rate (₹)':'rate','Amount':'amt','Mode':'mode','Status':'status','Paid':'paid','Qty (kg)':'qty','Qty (bags)':'qty','Qty (BN)':'qty','Qty (M³)':'qty','Qty (M³)':'qty','Qty (lit)':'qty','Qty (Liter)':'qty','Qty (L)':'qty','M³ / Trips':'qty','CUM / Trips':'qty','Page / Remark':'remark','Size':'size','Grade':'grade','Type':'type','Site':'site','Remark':'remark','Payment':'payment','Trips':'trips','Rate':'rate','Work':'work','Mistri (M)':'m','Helper (H)':'h','Beldar (B)':'b','Supervisor (S)':'s'};
+  var COLM={'Rate / load':'rate','Rate / kg':'rate','Rate / bag':'rate','Rate / M³':'rate','Rate / 1000':'rate','Rate / L':'rate','Cost (₹)':'amount','Date':'date','Supplier':'party','ID':'id','Item':'item','Name / Contractor':'party','Qty':'qty','Unit':'unit','Rate':'rate','Rate (₹)':'rate','Amount':'amt','Mode':'mode','Status':'status','Paid':'paid','Qty (kg)':'qty','Qty (bags)':'qty','Qty (BN)':'qty','Qty (M³)':'qty','Qty (M³)':'qty','Qty (lit)':'qty','Qty (Liter)':'qty','Qty (L)':'qty','M³ / Trips':'qty','CUM / Trips':'qty','Page / Remark':'remark','Size':'size','Grade':'grade','Type':'type','Site':'site','Remark':'remark','Payment':'payment','Trips':'trips','Rate':'rate','Work':'work','Mistri (M)':'m','Helper (H)':'h','Beldar (B)':'b'};
   var _idMap={};
   if((register==='incoming'||register==='cash')&&S.lb[register]){ var _np=0,_na=0;
     S.lb[register].forEach(function(_e,_ei){ var _paid=/paid/i.test(String(_e.status||'')); var _n=_paid?(++_na):(++_np); var _sn=String(_n); while(_sn.length<3)_sn='0'+_sn;
@@ -9830,18 +9820,18 @@ function lbEditableTable(register, cols, rows, realIndices){
           '</select></td>';
       } else if(register==='incoming'&&(k==='rate'||k==='qty')){
         var _mw=k==='qty'?'70px':'80px';
-        h+='<td><span style="display:block;min-width:'+_mw+';padding:3px 5px;border-radius:4px;cursor:text;border-bottom:1px dashed var(--line)" contenteditable="true" data-reg="'+register+'" data-lbref="'+realIdx+'" data-col="'+k+'" onblur="lbEditRowLight(this)">'+esc(String(v))+'</span></td>';
+        h+='<td><span style="display:block;min-width:'+_mw+';padding:3px 5px;border-radius:4px;cursor:text;border-bottom:1px dashed var(--line)" contenteditable="true" data-reg="'+register+'" data-lbref="'+realIdx+'" data-col="'+k+'" onblur="lbEditRowLight(this)">'+esc(String(v))+'</span>'+(k==='rate'&&!(+v)?incLotHint(r,'rate'):'')+'</td>';
       } else if(register==='cash'&&k==='amt'){
         h+='<td><span style="display:block;min-width:80px;padding:3px 5px;border-radius:4px;cursor:text;border-bottom:1px dashed var(--line)" contenteditable="true" data-reg="'+register+'" data-lbref="'+realIdx+'" data-col="amt" onblur="lbEditRowLight(this)">'+esc(String(v!=null?v:''))+'</span></td>';
       } else if(register==='incoming'&&k==='amt'){
         var _av=+(v||0);
         var _amtSty=_av===0?'color:var(--warn,#e88);font-weight:600':'';
-        h+='<td><span style="display:block;min-width:80px;padding:3px 5px;border-radius:4px;cursor:text;border-bottom:1px dashed var(--line);'+_amtSty+'" contenteditable="true" data-reg="'+register+'" data-lbref="'+realIdx+'" data-col="amt" onblur="lbEditRowLight(this)">'+esc(String(_av||0))+'</span></td>';
+        h+='<td><span style="display:block;min-width:80px;padding:3px 5px;border-radius:4px;cursor:text;border-bottom:1px dashed var(--line);'+_amtSty+'" contenteditable="true" data-reg="'+register+'" data-lbref="'+realIdx+'" data-col="amt" onblur="lbEditRowLight(this)">'+esc(String(_av||0))+'</span>'+(!_av?incLotHint(r,'amt'):'')+incPartHint(r)+'</td>';
       } else if(register==='cash'&&k==='party'){
         h+='<td><span style="display:block;min-width:110px;padding:3px 5px;border-radius:4px;cursor:text;border-bottom:1px dashed var(--line)" contenteditable="true" data-reg="'+register+'" data-lbref="'+realIdx+'" data-col="party" onblur="lbEditRowLight(this)">'+esc(String(v))+'</span></td>';
       } else {
         var isRemark=(k==='remark');;
-        var minW=(k==='m'||k==='h'||k==='b'||k==='s')?'36px':k==='work'?'110px':k==='date'?'88px':k==='item'?'130px':k==='party'?'120px':k==='remark'?'100px':k==='qty'?'44px':k==='unit'?'46px':k==='rate'?'52px':k==='trips'?'44px':k==='payment'?'60px':'70px';
+        var minW=(k==='m'||k==='h'||k==='b')?'36px':k==='work'?'110px':k==='date'?'88px':k==='item'?'130px':k==='party'?'120px':k==='remark'?'100px':k==='qty'?'44px':k==='unit'?'46px':k==='rate'?'52px':k==='trips'?'44px':k==='payment'?'60px':'70px';
         var onblur=isRemark
           ?'lbEditRow('+rq+','+realIdx+','+kq+',this.textContent.trim());render()'
           :'lbEditRow('+rq+','+realIdx+','+kq+',this.textContent.trim())';
@@ -9849,7 +9839,7 @@ function lbEditableTable(register, cols, rows, realIndices){
       }
     });
     var dupBtnHtml=isDup
-      ?'<button class="btn sm" style="padding:1px 5px;font-size:10px;margin-right:2px;background:rgba(220,50,50,0.15);color:var(--crit,#e53);border:1px solid rgba(220,50,50,0.4)" onclick="lbMarkNotDup('+rq+','+realIdx+')" title="Mark as genuine — not a duplicate">DUP ✓?</button>'
+      ?'<button class="btn sm" style="padding:1px 5px;font-size:10px;margin-right:2px;background:rgba(220,50,50,0.15);color:var(--crit,#e53);border:1px solid rgba(220,50,50,0.4)" onclick="lbMarkNotDup('+rq+','+realIdx+')" title="Mark as genuine — not a duplicate">✓ Not a dupe</button>'
       :'';
     // Mark as Paid quick button for pending incoming rows
     var markPaidBtn=(register==='incoming'&&!/paid/i.test(String(r.status||'')))
@@ -10113,6 +10103,7 @@ function lbAddRowSite(register,site){
     var templates={
       gitti:{date:'',party:'',qty:'600 cft',site:site,remark:''},
       msand:{date:'',party:'',qty:'600 cft',site:site,remark:''},
+      sixmm:{date:'',party:'Madan Yadav',qty:'600 cft',rate:9000,site:site,remark:''},
       hava:{date:'',trips:0,payment:'',site:site},
       dumper:{date:'',trips:0,payment:'',site:site},
       murum:{date:'',qty:0,remark:'',site:site},
@@ -10157,7 +10148,7 @@ function lbAiAddSite(register,site){
   var isTrip=(register==='hava'||register==='dumper');
   var isMurum=(register==='murum');
   var schema=register==='dpr'
-    ?'JSON array: [{section:"dpr",date,party,work,m,h,b,s,remark}] — m=Mistri (Ⓜ/M), h=Helper (Ⓗ/H), b=Beldar/labour (Ⓑ/B), s=Supervisor (Ⓢ/S); "Nil" → m=h=b=s=0, remark "NIL"'
+    ?'JSON array: [{section:"dpr",date,party,work,m,h,b,remark}] — m=Mistri (Ⓜ/M), h=Helper (Ⓗ/H), b=Beldar/labour (Ⓑ/B); "Nil" → m=h=b=0, remark "NIL"'
     :isTrip
     ?'JSON array: [{date,trips,payment,site}] — site is "Bypass" or "Barela"'
     :isMurum
@@ -10240,14 +10231,14 @@ function lbAiAddSite(register,site){
       var b64=ev.target.result.split(',')[1];
       var mt=imgEl.files[0].type||'image/jpeg';
       callAPI([
-        {text:'This is a construction site '+register+' register. Extract ALL date entries. Site='+site+'. Return ONLY: '+schema+'. A single page can mix sections (DPR worker lines, murum trips, incoming material, \"Murum => Nil\"). Give EVERY item a \"section\": \"dpr\" for worker/labour lines ({section,date,party,work,m,h,b,remark}; m=Mistri Ⓜ, h=Helper Ⓗ, b=Beldar Ⓑ), \"murum\" for murum trips ({section,date,party,qty,remark}), \"incoming\" for any other material ({section,date,item,qty,unit,rate,amt,party,remark}), or \"'+register+'\" for lines of this register. Never put murum or worker lines in incoming. Nil/Nill = zero.'},
+        {text:'This is a construction site '+register+' register. Extract ALL date entries. Site='+site+'. Return ONLY: '+schema+'. A single page can mix sections (DPR worker lines, murum trips, incoming material, \"Murum => Nil\"). Give EVERY item a \"section\": \"dpr\" for worker/labour lines ({section,date,party,work,m,h,b,remark}; m=Mistri Ⓜ, h=Helper Ⓗ, b=Beldar Ⓑ), \"murum\" for murum trips ({section,date,party,qty,remark}), \"incoming\" for any other material ({section,date,item,qty,unit,rate,amt,party,remark}), or \"'+register+'\" for lines of this register. Never put murum or worker lines in incoming. Nil/Nill = zero. Night shift = same day: a trip written after midnight stays on the date written on the page — never move it to the next date.'},
         {inline_data:{mime_type:mt,data:b64}}
       ]);
     };
     reader.readAsDataURL(imgEl.files[0]);
     return;
   }
-  callAPI([{text:'Extract from: "'+prompt+'". Return ONLY: '+schema+'. Site='+site+'. A single page can mix sections (DPR worker lines, murum trips, incoming material, \"Murum => Nil\"). Give EVERY item a \"section\": \"dpr\" for worker/labour lines ({section,date,party,work,m,h,b,remark}; m=Mistri Ⓜ, h=Helper Ⓗ, b=Beldar Ⓑ), \"murum\" for murum trips ({section,date,party,qty,remark}), \"incoming\" for any other material ({section,date,item,qty,unit,rate,amt,party,remark}), or \"'+register+'\" for lines of this register. Never put murum or worker lines in incoming. Nil/Nill = zero.'}]);
+  callAPI([{text:'Extract from: "'+prompt+'". Return ONLY: '+schema+'. Site='+site+'. A single page can mix sections (DPR worker lines, murum trips, incoming material, \"Murum => Nil\"). Give EVERY item a \"section\": \"dpr\" for worker/labour lines ({section,date,party,work,m,h,b,remark}; m=Mistri Ⓜ, h=Helper Ⓗ, b=Beldar Ⓑ), \"murum\" for murum trips ({section,date,party,qty,remark}), \"incoming\" for any other material ({section,date,item,qty,unit,rate,amt,party,remark}), or \"'+register+'\" for lines of this register. Never put murum or worker lines in incoming. Nil/Nill = zero. Night shift = same day: a trip written after midnight stays on the date written on the page — never move it to the next date.'}]);
 }
 
 /* --- Gitti 20mm --- */
@@ -10299,7 +10290,7 @@ function lbRowCost(reg,r){
   if(reg==='hava'||reg==='dumper'){ var t=+r.trips||0, y=lbTripRate(r); return t&&y?R2(t*y):(t?null:0); }
   if(+r.amt) return +r.amt;
   var rate=lbNum(r.rate); var q;
-  if(reg==='gitti'||reg==='msand') q=1;
+  if(reg==='gitti'||reg==='msand'||reg==='sixmm') q=1;
   else if(reg==='blocks') q=(typeof lbMQFromQty==='function')?lbMQFromQty(r.qty):lbNum(r.qty);
   else q=lbNum(r.qty);
   if(!q) return 0;
@@ -10330,7 +10321,10 @@ function lbCostTiles(reg,rows){
    A supplier with vendor bills (e.g. Madan Yadav) is measured by his bills, not by the register rows, so nothing is counted twice. */
 var DUE_STOP={hdfc:1,saliwada:1,aac:1,block:1,blocks:1,traders:1,trader:1,trades:1,ji:1,jbp:1,jabalpur:1,barela:1,bypass:1,gour:1,gor:1,and:1,sons:1,pvt:1,ltd:1,sales:1,the:1,enterprises:1,enterprise:1,infra:1,company:1,store:1,stores:1,shop:1,cash:1,cas:1,chack:1,paid:1,agst:1,against:1,online:1,product:1,products:1,petroleum:1,pump:1,jcb:1};
 var DUE_SAME={bakil:'vakil'};   /* the same name spelt two ways on paper */
-function dueKey(name){ return String(name||'').toLowerCase().replace(/[^a-z ]/g,' ').split(/\s+/).map(function(t){ return DUE_SAME[t]||t; }).filter(function(t,i,all){ return t.length>=3&&!DUE_STOP[t]&&all.indexOf(t)===i; }).sort().join(' '); }
+function dueKey(name){ var w=String(name||'').toLowerCase().replace(/[^a-z ]/g,' ').split(/\s+/).map(function(t){ return DUE_SAME[t]||t; });
+  var k=w.filter(function(t,i,all){ return t.length>=3&&!DUE_STOP[t]&&all.indexOf(t)===i; }).sort().join(' ');
+  if(!k){ var raw=String(name||'').toLowerCase().replace(/[^a-z]/g,''); var ini=w.filter(function(t){ return t&&!DUE_STOP[t]; }).join(''); k=ini?'~'+ini:(raw?'~'+raw:''); }   /* "S.K. Enterprises" → "~sk" */
+  return k; }
 var DUE_REGS=['gitti','msand','loha','cement','adhesive','bindingwire','tmgitti','readymix','bricks','blocks','diesel'];
 var DUE_LABEL={gitti:'Gitti',msand:'M-Sand',loha:'Loha',cement:'Cement',adhesive:'Adhesive',bindingwire:'Binding wire',tmgitti:'T.M. Gitti',readymix:'Readymix',bricks:'Bricks',blocks:'AAC blocks',diesel:'Diesel',incoming:'Incoming goods (pending)',bills:'Vendor bills',after:'After his account — not billed yet'};
 function duePartyName(r,reg){
@@ -10627,7 +10621,7 @@ function P_lb_loha(){
   var totalKg=kgOf(all);
   var sizes=['8mm','10mm','12mm','16mm','20mm','25mm','Other'];
   var dupIndices=lbFindDupIndices('loha');
-  var dupWarn=Object.keys(dupIndices).length?'<div style="background:rgba(220,50,50,0.1);color:var(--crit);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px">⚠ Duplicates found — click 🧹 Dedup to remove</div>':'';
+  var dupWarn=Object.keys(dupIndices).length?'<div style="background:rgba(220,50,50,0.1);color:var(--crit);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px">⚠ Some rows look the same — click 🧹 Dedup to review (delete the copy, or ✓ Not duplicates)</div>':'';
   let h=pageHead('Loha — Iron / Steel Register','8mm · 10mm · 12mm · 16mm — Bypass & Barela · click any cell to edit',
     '<button class="btn sm" style="background:rgba(99,179,237,0.15);color:#63b3ed" onclick="fixLbSizes()">🔧 Fix Sizes</button>'+
     '<button class="btn sm" style="background:rgba(99,179,237,0.15);color:#63b3ed" onclick="fixLbSuppliers(\'loha\')">🔧 Fix Suppliers</button>'+
@@ -10676,7 +10670,7 @@ function lbPageSimple(reg, title, unit, cols){
   var all=S.lb[reg];
   var total=all.reduce(function(s,r){return s+(parseFloat(r.qty)||0);},0);
   var dupIndices=lbFindDupIndices(reg);
-  var dupWarn=Object.keys(dupIndices).length?'<div style="background:rgba(220,50,50,0.1);color:var(--crit);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px">⚠ '+Math.floor(Object.keys(dupIndices).length/2)+' duplicates — click 🧹 Dedup</div>':'';
+  var dupWarn=Object.keys(dupIndices).length?'<div style="background:rgba(220,50,50,0.1);color:var(--crit);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px">⚠ '+Math.floor(Object.keys(dupIndices).length/2)+' rows look the same — click 🧹 Dedup to review (delete the copy, or ✓ Not duplicates)</div>':'';
   let h=pageHead(title+' ('+all.length+' entries)','Click any cell to edit',
     lbPageBtns(reg));
   h+=lbTiles([{cls:'a',k:'Total Entries',v:all.length,n:total.toLocaleString()+' '+unit+' total'}]);
@@ -10704,7 +10698,7 @@ function lbSiteSplitPage(reg,title,unit,cols){
   var bl=all.filter(function(r){return r.site==='Barela';});
   var bpT=sum(bp), blT=sum(bl);
   var dupIndices=lbFindDupIndices(reg);
-  var dupWarn=Object.keys(dupIndices).length?'<div style="background:rgba(220,50,50,0.1);color:var(--crit);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px">⚠ Duplicates found — click 🧹 Dedup</div>':'';
+  var dupWarn=Object.keys(dupIndices).length?'<div style="background:rgba(220,50,50,0.1);color:var(--crit);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px">⚠ Some rows look the same — click 🧹 Dedup to review (delete the copy, or ✓ Not duplicates)</div>':'';
   let h=pageHead(title+' ('+all.length+' entries)','Split by site — Bypass & Barela · click any cell to edit',lbPageBtns(reg));
   h+=lbTiles([
     {cls:'a',k:'Total Entries',v:all.length,n:'rows recorded'},
@@ -10733,7 +10727,7 @@ function P_lb_readymix(){
   all.forEach(function(r){var g=r.grade||'General';if(!byGrade[g])byGrade[g]=0;byGrade[g]+=(parseFloat(r.qty)||0);});
   var gradeStr=Object.keys(byGrade).map(function(g){return g+': '+byGrade[g]+' M³';}).join(' · ');
   var dupIndices=lbFindDupIndices('readymix');
-  var dupWarn=Object.keys(dupIndices).length?'<div style="background:rgba(220,50,50,0.1);color:var(--crit);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px">⚠ Duplicates found — click 🧹 Dedup</div>':'';
+  var dupWarn=Object.keys(dupIndices).length?'<div style="background:rgba(220,50,50,0.1);color:var(--crit);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px">⚠ Some rows look the same — click 🧹 Dedup to review (delete the copy, or ✓ Not duplicates)</div>':'';
   let h=pageHead('Readymix Concrete ('+all.length+' entries)','Track RMC deliveries by grade · Click to edit',lbPageBtns('readymix'));
   h+=lbTiles([
     {cls:'a',k:'Total Deliveries',v:all.length,n:totalCum.toLocaleString()+' M³ total'},
@@ -10775,7 +10769,7 @@ function P_lb_bricks(){
   var bl=all.filter(function(r){return r.site==='Barela';});
   var bpT=nos(bp), blT=nos(bl);
   var dupIndices=lbFindDupIndices('bricks');
-  var dupWarn=Object.keys(dupIndices).length?'<div style="background:rgba(220,50,50,0.1);color:var(--crit);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px">⚠ Duplicates found — click 🧹 Dedup</div>':'';
+  var dupWarn=Object.keys(dupIndices).length?'<div style="background:rgba(220,50,50,0.1);color:var(--crit);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px">⚠ Some rows look the same — click 🧹 Dedup to review (delete the copy, or ✓ Not duplicates)</div>':'';
   let h=pageHead('Bricks — ईंट Register ('+all.length+' entries)','Laal (red) bricks · ACC blocks go to the Blocks page · click any cell to edit',
     '<button class="btn sm" style="background:rgba(99,179,237,0.15);color:#63b3ed" onclick="lbMoveAccOutOfBricks()">⇢ Move ACC → Blocks</button>'+
     '<button class="btn sm" onclick="fixAllDates()">Fix Dates</button>'+
@@ -10817,7 +10811,7 @@ function P_lb_blocks(){
   var bl=all.filter(function(r){return r.site==='Barela';});
   var bpMQ=mqOf(bp), blMQ=mqOf(bl);
   var dupIndices=lbFindDupIndices('blocks');
-  var dupWarn=Object.keys(dupIndices).length?'<div style="background:rgba(220,50,50,0.1);color:var(--crit);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px">⚠ Duplicates found — click 🧹 Dedup</div>':'';
+  var dupWarn=Object.keys(dupIndices).length?'<div style="background:rgba(220,50,50,0.1);color:var(--crit);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px">⚠ Some rows look the same — click 🧹 Dedup to review (delete the copy, or ✓ Not duplicates)</div>':'';
   let h=pageHead('AAC Blocks Register ('+all.length+' entries)','600×200×150 blocks · 1 M³ = 555 blocks · click any cell to edit',lbPageBtns('blocks'));
   h+=lbTiles([
     {cls:'a',k:'Total Entries',v:all.length,n:'rows recorded'},
@@ -11718,7 +11712,7 @@ function dcSuggestDates(iso,from){
 function dcSetWorkStart(v){ S.company=S.company||{}; S.company.billsFrom=v||''; logAudit('U','Company','—','Bills start from '+(v?dmyS(v):'(automatic)')); save(); render(); }
 
 const PAGES={
- dash:P_dash, mlog:P_mlog, trips:P_trips, muster:P_muster, stock:P_stock,
+ dash:P_dash, site3d:function(){ return P_site3d(); }, mlog:P_mlog, trips:P_trips, muster:P_muster, stock:P_stock,
  sales:P_sales, purch:P_purch,
  vch:P_vch, daybook:P_daybook, ledger:P_ledger, tb:P_tb, fs:P_fs,
  gst:P_gst, tds:P_tds, pay:P_pay, comp:P_comp,
@@ -11726,8 +11720,8 @@ const PAGES={
  m_items:P_m_items, m_coa:P_m_coa,
  audit:P_audit, settings:P_settings,
  aiscan:P_aiscan, wainbox:P_wainbox,
- lb_murum:P_lb_murum, lb_dpr:P_lb_dpr, aiinbox:P_aiinbox,
- lb_due:P_lb_due, lb_gitti:P_lb_gitti, lb_hava:P_lb_hava, lb_dumper:P_lb_dumper, lb_msand:P_lb_msand,
+ lb_murum:P_lb_murum, lb_dpr:P_lb_dpr, workdone:function(){ return P_workdone(); }, aiinbox:P_aiinbox,
+ lb_due:P_lb_due, lb_gitti:P_lb_gitti, lb_hava:P_lb_hava, lb_dumper:P_lb_dumper, lb_msand:P_lb_msand, lb_sixmm:function(){ return P_lb_sixmm(); },
  lb_loha:P_lb_loha, lb_cement:P_lb_cement, lb_bindingwire:P_lb_bindingwire,
  lb_readymix:P_lb_readymix, lb_bricks:P_lb_bricks, lb_blocks:P_lb_blocks,
   lb_adhesive:P_lb_adhesive, lb_tmgitti:P_lb_tmgitti, lb_diesel:P_lb_diesel,
@@ -11889,7 +11883,7 @@ function detectProblems(){
           type:'dup',severity:'warn',
           title:'Duplicate in Cash Book',
           detail:'Row #'+(i+1)+' ("'+esc(r.remark||r.party)+'", '+dmyS(d)+', '+fmtC(am)+') looks like a duplicate of row #'+(cseen[key]+1)+'.',
-          action:'go(\'lb_cash\')',actionLabel:'Open Cash Book'
+          action:'go(\'lb_cash\')',actionLabel:'Open Cash Book',dupReg:'cash',dupIdx:i
         });
       } else cseen[key]=i;
     });
@@ -11907,7 +11901,7 @@ function detectProblems(){
         var same=(inv&&oinv&&inv===oinv)||(!!o.vchId!==!!r.vchId&&(!inv||!oinv||inv===oinv))||(+r.litres>0&&+o.litres===+r.litres);
         if(same&&!(inv&&oinv&&inv!==oinv)) problems.push({key:'dupdiesel|'+k+'|'+i,type:'dup',severity:'warn',title:'Same diesel fill entered twice',
           detail:'Diesel register row #'+(i+1)+' ('+dmy(d)+', '+fmtC(am)+(inv?', invoice '+esc(inv):'')+') is the same fill as row #'+(prev+1)+' ('+esc(String(o.remark||'').slice(0,60))+').',
-          action:"go('lb_diesel')",actionLabel:'Open Diesel register'});
+          action:"go('lb_diesel')",actionLabel:'Open Diesel register',dupReg:'diesel',dupIdx:i});
       } else dseen[k]=i;
     });
   }
@@ -11943,6 +11937,7 @@ function dismissProblem(i){
     var reg=/cash/i.test(p.title)?'cash':'incoming';
     if(S.lb&&S.lb[reg]&&S.lb[reg][p.dupRemoveIdx]) S.lb[reg][p.dupRemoveIdx]._nodup=true;
   }
+  if(p.dupReg&&p.dupIdx!==undefined&&S.lb&&S.lb[p.dupReg]&&S.lb[p.dupReg][p.dupIdx]) S.lb[p.dupReg][p.dupIdx]._nodup=true;
   logAudit('U','Problems',p.type,(PROB_NODUP_TYPES[p.type]?'Marked not a duplicate: ':'Ignored: ')+String(p.title).replace(/<[^>]+>/g,'').slice(0,120));
   window._probsFlash={ok:false,msg:'Kept as it is — nothing in your books was changed or deleted. To remove an entry use the red/brown button (Delete / Keep … delete the others / Fix all).'};
   save(); render(); showProblems();
@@ -12712,7 +12707,7 @@ function boot(){
     // Remove exact duplicates
     var _seen={},_kept=[];
     S.trips.forEach(function(t){
-      if(!t.chalan){ _kept.push(t); return; }   /* two trips on one day without a chalan are two real trips */
+      if(!t.chalan||t._nodup){ _kept.push(t); return; }   /* two trips on one day without a chalan are two real trips; rows marked "not a duplicate" are never removed */
       var k=(t.date||'')+'|'+(t.chalan||'')+'|'+(t.src||'')+'|'+(t.cum||0);
       if(!_seen[k]){_seen[k]=1;_kept.push(t);}
     });
@@ -13123,7 +13118,7 @@ function backupExcel(){
     ]);
 
     // 6. Logbooks — one sheet each
-    const LB_LABELS={murum:'LB-Murum',gitti:'LB-Gitti',msand:'LB-M-Sand',hava:'LB-Hava',
+    const LB_LABELS={murum:'LB-Murum',gitti:'LB-Gitti',msand:'LB-M-Sand',sixmm:'LB-6mm',hava:'LB-Hava',
       dumper:'LB-Dumper',loha:'LB-Loha',cement:'LB-Cement',bindingwire:'LB-BindingWire',
       readymix:'LB-ReadyMix',bricks:'LB-Bricks',blocks:'LB-Blocks',adhesive:'LB-Adhesive',
       tmgitti:'LB-TMGitti',diesel:'LB-Diesel',incoming:'LB-Incoming',cash:'LB-Cash',bills:'LB-Bills',dpr:'LB-DPR'};
@@ -13146,7 +13141,7 @@ function backupExcel(){
             _chkFY(v); out.push(_xd(v)); if(hasRange) out.push(''); return;
           }
           if(c==='qty'&&qtyText){ const q=_qty(v); out.push(q[0]); out.push(q[1]); return; }
-          if((c==='qty'||c==='amt'||c==='rate'||c==='trips'||c==='m'||c==='h'||c==='b'||c==='s')&&typeof v==='string'&&/^-?[\d.]+$/.test(v.trim())) v=+v;
+          if((c==='qty'||c==='amt'||c==='rate'||c==='trips'||c==='m'||c==='h'||c==='b')&&typeof v==='string'&&/^-?[\d.]+$/.test(v.trim())) v=+v;
           out.push(v);
         });
         return out;
@@ -13208,7 +13203,7 @@ function backupExcel(){
    explains it and, if entries are missing, can send them to the AI Inbox for your approval.            */
 var NL_CONTEXT='I use my construction ledger app "Nirman Ledger" (Korien Aureate, Jabalpur — sites Bypass and Barela, FY 2026-27). '+
   'Rules of my books: only payments in the Cash Book (petty cash / PC) count as paid; Incoming Goods without a Cash Book payment are NOT paid; '+
-  'JCB/roller hours = meter closing − opening; JCB ₹1,000/h until 15/5/2026 and ₹1,100/h from 16/5/2026. '+
+  'Murum gate register: night and day are one day — trips after midnight stay on the date written on the gate page; JCB/roller hours = meter closing − opening; JCB ₹1,000/h until 15/5/2026 and ₹1,100/h from 16/5/2026. '+
   'If my "Nirman Ledger" connector is available, use nirman_recent to look at the related registers before you answer; if entries are missing, send them with nirman_add_entries to my AI Inbox (I approve them in the app). Never invent numbers.';
 function nlOpenClaude(text){
   var t=String(text||''); if(t.length>6500) t=t.slice(0,6500)+'\n…(cut — the rest is copied, paste it if needed)';
@@ -13488,6 +13483,437 @@ function gsResultsHtml(){
     if((e.key==='/'&&!typing)||((e.ctrlKey||e.metaKey)&&(e.key==='k'||e.key==='K'))){ var b=document.getElementById('gsBox'); if(b){ e.preventDefault(); b.focus(); b.select(); } }
   });
 })();
+</script>
+<script>
+/* ═══════════ "NOT A DUPLICATE" — EVERY PLACE THE APP FLAGS COPIES ═══════════
+   Every Dedup button now opens a review instead of deleting straight away. For each group of rows that
+   look the same you can: 🗑 delete the extra row, or press "✓ Not duplicates — keep all". The rows you keep
+   are remembered (_nodup) and are never flagged again — on the register page, in Problems and in Deep Check.
+   Works for: all registers (Cash Book, Incoming Goods, Diesel, Murum, Gitti, Loha, Cement …), Machine Log and Trip Sheet. */
+
+/* the same "looks alike" rule the register pages use — plus amount (and the pump invoice for diesel),
+   so two fills with different invoices (#9212 / #9213) are no longer flagged */
+function ndLbKey(register,r){
+  var d=(r.date||'').replace(/[^0-9]/g,'');
+  if(register==='cash'){
+    var amt=String(+(r.amt||r.amount||0)); var narr=(r.remark||r.narration||r.party||'').toLowerCase().trim().slice(0,10);
+    if(!d||!amt||amt==='0') return null; return d+'|'+amt+'|'+narr;
+  }
+  if(register==='dpr'){
+    var pp=(r.party||'').toLowerCase().replace(/[^a-z0-9]/g,''); if(!d||!pp) return null;
+    return d+'|'+pp.slice(0,8)+'|'+(r.site||'');
+  }
+  if(register==='incoming'){
+    var it=(r.item||'').toLowerCase().trim(), pa=(r.party||'').toLowerCase().trim(), q=String(+(r.qty||0));
+    if(!d||(it.length<2&&pa.length<2)) return null; return d+'|'+it.slice(0,10)+'|'+pa.slice(0,8)+'|'+q;
+  }
+  var q2=String(r.trips||r.qty||r.litres||'').replace(/[^0-9]/g,''), p=(r.party||r.supplierName||'').toLowerCase().trim(), s=(r.site||'');
+  if(!d) return null;
+  var k=d+'|'+q2+'|'+p.slice(0,8)+'|'+s+'|'+(+(r.amount||r.amt||0));
+  if(register==='diesel'){ var inv=(String(r.remark||'').match(/#\s*(\d{3,})|inv\w*\.?\s*#?\s*([0-9A-Z]{6,})/i)||[]).slice(1).filter(Boolean)[0]||''; k+='|'+inv; }
+  return k;
+}
+function lbFindDupIndices(register){
+  var rows=(S.lb&&S.lb[register])||[], seen={}, dups={};
+  rows.forEach(function(r,i){ if(!r||r._nodup) return; var k=ndLbKey(register,r); if(k===null) return;
+    if(seen[k]!==undefined){ dups[i]=true; dups[seen[k]]=true; } else seen[k]=i; });
+  return dups;
+}
+function lbMarkNotDup(register,idx){
+  if(!S.lb||!S.lb[register]||!S.lb[register][idx]) return;
+  S.lb[register][idx]._nodup=true;
+  logAudit('U',(TITLES&&TITLES['lb_'+register])||register,dmyS(toISO(S.lb[register][idx].date)||S.lb[register][idx].date),'Marked not a duplicate');
+  save(); render();
+  toast('✅ Marked as a real entry — it will not be flagged as a duplicate again');
+}
+
+/* ── generic review dialog ── */
+var ND=null;
+function ndGroupsBy(list,keyFn){
+  var g={}, order=[];
+  list.forEach(function(r){ if(!r||r._nodup) return; var k=keyFn(r); if(k===null||k===undefined) return; if(!g[k]){ g[k]=[]; order.push(k); } g[k].push(r); });
+  return order.filter(function(k){ return g[k].length>1; }).map(function(k){ return g[k]; });
+}
+function ndIsCopy(grp,ri){ var k=lbExactKey(grp[ri]); for(var j=0;j<ri;j++) if(lbExactKey(grp[j])===k) return true; return false; }
+function ndOpen(spec){
+  ND=spec; var groups=spec.groups();
+  if(!groups.length){ closeModal(); toast(spec.cleanMsg||'✅ No duplicates found'); return; }
+  ND._g=groups;
+  var copies=0; groups.forEach(function(grp){ grp.forEach(function(_,ri){ if(ndIsCopy(grp,ri)) copies++; }); });
+  var h='<div style="padding:9px 12px;border-radius:6px;margin-bottom:12px;font-size:13px;background:var(--surface-2);color:var(--ink-2);line-height:1.5">'+
+    '<b>'+groups.length+' group'+(groups.length>1?'s':'')+'</b> of rows look the same. Check each group with the paper:<br>'+
+    '• the same entry written twice → press <b>🗑 Delete</b> on the extra row<br>'+
+    '• real separate entries → press <b>✓ Not duplicates — keep all</b> (they will never be flagged again)<br>'+
+    '<span class="hint">Nothing changes until you press a button.</span></div>';
+  groups.forEach(function(grp,gi){
+    var exact=grp.every(function(r){ return lbExactKey(r)===lbExactKey(grp[0]); });
+    h+='<div style="margin-bottom:14px;border:1px solid color-mix(in srgb,var(--crit) 35%,transparent);border-radius:8px;overflow:hidden">';
+    h+='<div style="background:var(--crit-soft);padding:7px 12px;font-size:12.5px;font-weight:600;color:var(--crit);display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+
+      '<span>Group '+(gi+1)+' · '+esc(spec.groupLabel(grp))+'</span>'+
+      '<span class="pill" style="font-weight:500">'+(exact?'every field the same':'looks alike — some fields differ')+'</span>'+
+      '<button class="btn sm" style="margin-left:auto" onclick="ndKeep('+gi+')">✓ Not duplicates — keep all</button></div>';
+    h+='<div style="overflow-x:auto"><table class="t" style="width:100%;font-size:12px"><thead><tr>'+spec.cols.map(function(c){ return '<th>'+c+'</th>'; }).join('')+'<th></th></tr></thead><tbody>';
+    grp.forEach(function(r,ri){
+      var cp=ndIsCopy(grp,ri);
+      h+='<tr'+(cp?' style="background:var(--crit-soft)"':'')+'>'+spec.cells(r).map(function(c){ return '<td>'+c+'</td>'; }).join('')+
+        '<td style="white-space:nowrap">'+(cp?'<span class="hint" style="margin-right:6px">copy of the row above</span>':'')+
+        '<button class="btn sm dngr gh" onclick="ndDel('+gi+','+ri+')">🗑 Delete</button></td></tr>';
+    });
+    h+='</tbody></table></div></div>';
+  });
+  modal(spec.title,h,
+    '<button class="btn" onclick="ndKeepEvery()" title="Every group is real separate entries">✓ None are duplicates — keep all</button>'+
+    (copies?'<button class="btn dngr" onclick="ndDelCopies()" title="Deletes only rows where every field is the same as a row above; keeps the first">🗑 Delete exact copies ('+copies+')</button>':'')+
+    '<button class="btn pri" onclick="closeModal()">Close</button>', true);
+}
+function ndReopen(){ if(ND) ndOpen(ND); }
+function ndKeep(gi){
+  var grp=ND&&ND._g&&ND._g[gi]; if(!grp) return;
+  grp.slice(1).forEach(function(r){ r._nodup=true; });   /* the first stays as the reference: a NEW copy of it is still caught */
+  logAudit('U',ND.area,dmyS(toISO(grp[0].date)||grp[0].date),grp.length+' rows marked not duplicates — '+ND.groupLabel(grp));
+  save(); render(); toast('✓ Kept all '+grp.length+' — they will not be flagged again'); ndReopen();
+}
+function ndKeepEvery(){
+  if(!ND||!ND._g) return; var n=0;
+  ND._g.forEach(function(grp){ grp.slice(1).forEach(function(r){ r._nodup=true; n++; }); });
+  logAudit('U',ND.area,'—',ND._g.length+' groups marked not duplicates');
+  save(); closeModal(); render(); toast('✓ All '+ND._g.length+' groups kept — they will not be flagged again');
+}
+function ndDel(gi,ri){
+  var grp=ND&&ND._g&&ND._g[gi]; if(!grp||!grp[ri]) return;
+  if(!ND.del(grp[ri])) return;
+  ndReopen();
+}
+function ndDelCopies(){
+  if(!ND||!ND._g) return; var drop=[];
+  ND._g.forEach(function(grp){ grp.forEach(function(r,ri){ if(ndIsCopy(grp,ri)) drop.push(r); }); });
+  if(!drop.length) return;
+  if(!confirm('Delete '+drop.length+' exact cop'+(drop.length>1?'ies':'y')+' (every field the same as a row above)? The first of each is kept.')) return;
+  if(ND.before) ND.before();
+  ND.delMany(drop);
+  ndReopen();
+}
+
+/* ── Registers (Cash Book, Incoming Goods, Diesel, Murum, Gitti, Loha, Cement …) ── */
+function ndLbLabel(r){ return [r.item||r.size||'', r.party||r.supplier||r.supplierName||''].filter(Boolean).join(' · ')||'—'; }
+function lbDedup(register){
+  if(!S.lb) S.lb={}; if(!S.lb[register]) S.lb[register]=[];
+  var keepBackup=function(){ try{ localStorage.setItem(KEY+'_before_dedup',JSON.stringify({register:register,rows:S.lb[register].slice(),at:new Date().toISOString()})); }catch(e){} };
+  var backedUp=false;
+  ndOpen({title:'Duplicate Review — '+((TITLES&&TITLES['lb_'+register])||register), area:(TITLES&&TITLES['lb_'+register])||register,
+    cleanMsg:'✅ No duplicates in this register',
+    groups:function(){ return ndGroupsBy(S.lb[register]||[],function(r){ return ndLbKey(register,r); }); },
+    groupLabel:function(g){ return dmy(toISO(g[0].date)||g[0].date)+' · '+ndLbLabel(g[0]); },
+    cols:['Date','Item / Party','Qty','Amount','Site','Remark'],
+    cells:function(r){ return ['<span class="mono">'+dmy(toISO(r.date)||r.date)+'</span>',esc(ndLbLabel(r)),esc(String(r.qty||r.trips||r.litres||'')+(r.unit?' '+r.unit:'')),
+      (r.amt||r.amount)?fmtC(+(r.amt||r.amount)):'',esc(r.site||''),'<span style="font-size:11px">'+esc(String(r.remark||r.status||'').slice(0,70))+'</span>']; },
+    before:function(){ if(!backedUp){ keepBackup(); backedUp=true; } },
+    del:function(r){ if(!backedUp){ keepBackup(); backedUp=true; } var ix=S.lb[register].indexOf(r); if(ix<0) return false; lbDeleteRow(register,ix); return true; },
+    delMany:function(list){ list.forEach(function(r){ var ix=S.lb[register].indexOf(r); if(ix>=0) lbDeleteRow(register,ix); });
+      logAudit('D','Register',register,'Dedup removed '+list.length+' exact copies'); save(); render(); toast('✅ Removed '+list.length+' exact cop'+(list.length>1?'ies':'y')); }
+  });
+}
+
+/* ── Machine Log ── */
+function ndMlogKey(r){
+  if(r.offsite) return null;   /* meter-gap rows ("not our work") are notes, never copies */
+  return (toISO(r.date)||r.date||'')+'|'+(r.mtype||'jcb')+'|'+(+(r.hmStart||0)).toFixed(1)+'|'+(+(r.hmEnd||0)).toFixed(1)+'|'+(+(r.hours||0)).toFixed(2)+'|'+(r.machine||'');
+}
+function ndMlogDel(r){
+  if(r.billed&&!confirm('This log is already on a hire bill ('+r.billed+'). Delete it anyway?')) return false;
+  S.machineLogs=S.machineLogs.filter(function(x){ return x!==r; });
+  logAudit('D','Machine Log',dmyS(toISO(r.date)||r.date),'Duplicate removed: '+(r.hmStart||0)+'→'+(r.hmEnd||0)+' '+(r.hours||0)+'h');
+  return true;
+}
+function mlogDedup(){
+  if(!S.machineLogs||!S.machineLogs.length){ toast('No entries',true); return; }
+  ndOpen({title:'Duplicate Review — Machine Log', area:'Machine Log',
+    cleanMsg:'✅ No duplicates in '+S.machineLogs.length+' machine-log entries',
+    groups:function(){ return ndGroupsBy(S.machineLogs,ndMlogKey); },
+    groupLabel:function(g){ var m=MACH(g[0].machine)||{}; return dmy(toISO(g[0].date)||g[0].date)+' · '+(g[0].mtype||'jcb').toUpperCase()+' '+(m.code||'')+' · meter '+(g[0].hmStart||0)+' → '+(g[0].hmEnd||0); },
+    cols:['Date','Machine','Operator','Meter','Hours','Work','Bill'],
+    cells:function(r){ var m=MACH(r.machine)||{}; return ['<span class="mono">'+dmy(toISO(r.date)||r.date)+'</span>',esc((r.mtype==='roller'?'🛞 ':'🚜 ')+(m.code||'—')),esc(r.operator||'—'),
+      '<span class="mono">'+(r.hmStart||0)+' → '+(r.hmEnd||0)+'</span>','<b>'+(r.hours||0)+'</b>',esc(String(r.work||'—').slice(0,50)),esc(r.billed||'')]; },
+    del:function(r){ if(!ndMlogDel(r)) return false; save(); render(); toast('Deleted'); return true; },
+    delMany:function(list){ var n=0; list.forEach(function(r){ if(ndMlogDel(r)) n++; }); save(); render(); toast('✅ Removed '+n+' duplicate'+(n>1?'s':'')); }
+  });
+}
+function mlogMarkNotDup(id){
+  var r=(S.machineLogs||[]).find(function(x){ return x.id===id; }); if(!r) return;
+  r._nodup=true; logAudit('U','Machine Log',dmyS(toISO(r.date)||r.date),'Marked not a duplicate');
+  save(); render(); toast('✅ Marked as a real entry — it will not be flagged as a duplicate again');
+}
+
+/* ── Trip Sheet ── */
+function ndTripKey(t){ return (t.date||'')+'|'+(t.chalan||t.src||'')+'|'+(t.cum||0); }
+function ndTripDel(t){
+  if(t.billed&&!confirm('This trip is already on a bill ('+t.billed+'). Delete it anyway?')) return false;
+  S.trips=S.trips.filter(function(x){ return x!==t; });
+  logAudit('D','Trip',t.chalan||'','Duplicate removed');
+  return true;
+}
+function tripSheetDedup(){
+  if(!S.trips||!S.trips.length){ toast('No trips'); return; }
+  ndOpen({title:'Duplicate Review — Trip Sheet', area:'Trip Sheet',
+    cleanMsg:'✅ No duplicates in '+S.trips.length+' trips',
+    groups:function(){ return ndGroupsBy(S.trips,ndTripKey); },
+    groupLabel:function(g){ return dmy(toISO(g[0].date)||g[0].date)+' · '+(g[0].chalan||g[0].src||'')+' · '+(g[0].cum||0)+' CFT'; },
+    cols:['Date','Chalan','Source','Tipper / Party','CFT','Site','Bill'],
+    cells:function(t){ return ['<span class="mono">'+dmy(toISO(t.date)||t.date)+'</span>',esc(t.chalan||''),esc(t.src||''),esc([t.tipper,t.party].filter(Boolean).join(' · ')),
+      String(t.cum||0),esc(t.site==='site-barela'?'Barela':'Bypass'),esc(t.billed||'')]; },
+    del:function(t){ if(!ndTripDel(t)) return false; save(); render(); toast('Deleted'); return true; },
+    delMany:function(list){ var n=0; list.forEach(function(t){ if(ndTripDel(t)) n++; }); save(); render(); toast('✅ Removed '+n+' duplicate'+(n>1?'s':'')); }
+  });
+}
+</script>
+<script>
+/* Incoming Goods: a row without its own price says WHY — it is priced in a lot, it is a transfer, or the price is still missing */
+function incLotTotal(lot){ return ((S.lb&&S.lb.incoming)||[]).filter(function(x){ return x.lot===lot; }).reduce(function(s,x){ return s+(+x.amt||0); },0); }
+function incLotHint(r,col){
+  var st='display:block;font-size:10px;line-height:1.3;margin-top:2px;white-space:nowrap;';
+  if(r.transfer) return '<span class="hint" style="'+st+'">transfer — costed at the other site</span>';
+  if(r.lot){
+    if(col==='rate'&&+r.amt) return '<span class="hint" style="'+st+'">lot total — item rates not on paper</span>';
+    if(!(+r.amt)) return '<span class="hint" style="'+st+'">in lot ₹'+Math.round(incLotTotal(r.lot)).toLocaleString('en-IN')+'</span>';
+    return '';
+  }
+  if(col==='amt'&&!(+r.amt)) return '<span style="'+st+'color:var(--crit)">price missing</span>';
+  return '';
+}
+</script>
+<script>
+/* ═══════════ 6mm (Gitti / Dust) register ═══════════  rate list 5/9/2026: 6mm ₹9,000 a hiwa (600 cft) */
+if(typeof DUE_REGS!=='undefined'&&DUE_REGS.indexOf('sixmm')<0) DUE_REGS.push('sixmm');
+if(typeof DUE_LABEL!=='undefined') DUE_LABEL.sixmm='6mm';
+if(typeof LB_COST_UNIT!=='undefined') LB_COST_UNIT.sixmm='load';
+if(typeof LB_SEC_LABEL!=='undefined') LB_SEC_LABEL.sixmm='6mm (Gitti / Dust)';
+function P_lb_sixmm(){
+  if(!S.lb) S.lb={}; if(!S.lb.sixmm) S.lb.sixmm=[];
+  S.lb.sixmm.sort(function(a,b){return (toISO(a.date)||a.date)<(toISO(b.date)||b.date)?1:-1;});
+  var all=S.lb.sixmm, bpI=[], blI=[];
+  all.forEach(function(r,i){ (r.site==='Barela'?blI:bpI).push(i); });
+  var q=function(r){ return parseFloat(String(r.qty||'0').replace(/[^0-9.]/g,''))||0; };
+  var cft=function(ix){ return ix.reduce(function(s,i){ return s+q(all[i]); },0); };
+  var h=pageHead('6mm Gitti / Dust ('+all.length+' loads)','Rate list: 6mm ₹9,000 a hiwa (600 cft) · click any cell to edit',lbPageBtns('sixmm'));
+  h+=lbTiles([
+    {cls:'a',k:'Total Loads',v:all.length,n:cft(bpI.concat(blI)).toLocaleString()+' cft'},
+    {cls:'s',k:'Bypass',v:cft(bpI).toLocaleString()+' cft',n:bpI.length+' loads'},
+    {cls:'g',k:'Barela',v:cft(blI).toLocaleString()+' cft',n:blI.length+' loads'}]);
+  h+=lbCostTiles('sixmm',all);
+  [['Bypass',bpI],['Barela',blI]].forEach(function(x){
+    h+='<div class="card" style="margin-bottom:14px"><header><h3>6mm — '+x[0]+'</h3><span class="sub">'+x[1].length+' load'+(x[1].length===1?'':'s')+'</span></header>'+
+      lbEditableTable('sixmm',['Date','Party','Qty','Rate / load','Site','Remark'],x[1].map(function(i){return all[i];}),x[1])+lbFooter('sixmm',x[0])+'</div>'; });
+  return h;
+}
+</script>
+<script>
+/* DPR: a supervisor / staff row has no Mistri-Helper-Beldar count — it is Present or Absent, never "NIL" */
+function dprSup(r){
+  if(!r) return ''; var w=String(r.work||'')+' '+String(r.party||''), rm=String(r.remark||'');
+  if(!/supervisor|staff|munshi|engineer|manager/i.test(w)) return '';
+  if(/absent|leave|chutti|छुट्टी|nahi aaya/i.test(rm)) return 'A';
+  return 'P';
+}
+</script>
+<script>
+/* Incoming Goods partly paid: r.paidPart (from the Cash Book), or the paid share of a partly paid bill */
+function incPaidPart(r){
+  if(!r||/paid/i.test(r.status||'')) return 0;
+  if(+r.paidPart>0) return Math.min(+r.paidPart,+r.amt||0);
+  if(r.billId){ var b=(S.purchases||[]).find(function(x){ return x.id===r.billId; });
+    if(b&&+b.paid>0&&+b.net>0) return R2((+r.amt||0)*Math.min(1,(+b.paid)/(+b.net))); }
+  return 0;
+}
+function incPartHint(r){ var p=incPaidPart(r); if(!(p>0)) return '';
+  return '<span style="display:block;font-size:10px;line-height:1.3;margin-top:2px;white-space:nowrap;color:var(--good)">₹'+Math.round(p).toLocaleString('en-IN')+' paid · <b style="color:var(--crit)">₹'+Math.round((+r.amt||0)-p).toLocaleString('en-IN')+' due</b></span>'; }
+</script>
+<script>
+/* ===== Work Done — what was done on site each day (owner 9/10/2026) =====
+   Written lines: typed by the owner / supervisor (S.workDone).
+   From the records: filled automatically from DPR, murum, machine log, goods and other registers of that day. */
+var WD_START='2026-10-09';
+function wdList(){ if(!Array.isArray(S.workDone)) S.workDone=[]; return S.workDone; }
+function wdStart(){ return S.workDoneStart||WD_START; }
+function wdDays(){
+  var out=[], end=today(), d=new Date(wdStart()+'T00:00:00'), stop=new Date(end+'T00:00:00');
+  wdList().forEach(function(w){ if(w.date>end){ var x=new Date(w.date+'T00:00:00'); if(x>stop) stop=x; } });
+  while(d<=stop){ var p=function(n){ return String(n).padStart(2,'0'); }; out.push(d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())); d.setDate(d.getDate()+1); }
+  return out.reverse();
+}
+function wdDayName(iso){
+  var d=new Date(iso+'T00:00:00'), t=today(), y=new Date(t+'T00:00:00'); y.setDate(y.getDate()-1);
+  var p=function(n){ return String(n).padStart(2,'0'); }, yIso=y.getFullYear()+'-'+p(y.getMonth()+1)+'-'+p(y.getDate());
+  var lbl=d.toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'short',year:'numeric'});
+  return {lbl:lbl, tag: iso===t?'Today':(iso===yIso?'Yesterday':'')};
+}
+function wdQty(q){ var n=parseFloat(String(q==null?'':q).replace(/[^0-9.]/g,'')); return isNaN(n)?0:n; }
+/* lines from the registers for one day: [{site, text}] */
+function wdAuto(iso){
+  var out=[], add=function(site,text){ out.push({site:site||'Bypass',text:text}); };
+  var on=function(r){ return (toISO(r.date)||r.date)===iso; };
+  /* DPR */
+  var sup={}, dpr=((S.lb&&S.lb.dpr)||[]).filter(on);
+  dpr.forEach(function(r){
+    var m=+r.m||0, h=+r.h||0, b=+r.b||0, site=r.site||'Bypass';
+    if(!(m||h||b)){ if(/supervisor|staff/i.test(r.work||'')&&!/absent/i.test(r.remark||'')){ (sup[site]=sup[site]||[]).push(r.party); } return; }
+    var who=[m?m+' mistri':'',h?h+' helper':'',b?b+' beldar':''].filter(Boolean).join(', ');
+    var rm=String(r.remark||''); if(/^DPR No\.?\s*\d+$/i.test(rm)||/^present/i.test(rm)) rm='';
+    add(site,(r.work||'Work')+' — '+(r.party||'')+' ('+who+')'+(rm?' · '+rm:''));
+  });
+  Object.keys(sup).forEach(function(s){ add(s,'Supervisors present: '+sup[s].join(', ')); });
+  /* murum trips */
+  var mu={}; ((S.lb&&S.lb.murum)||[]).filter(on).forEach(function(r){ var q=+r.qty||0; if(q>0){ var s=r.site||'Bypass'; mu[s]=(mu[s]||0)+q; } });
+  Object.keys(mu).forEach(function(s){ add(s,'Hard murum: '+mu[s]+' trip'+(mu[s]>1?'s':'')+' (gate register)'); });
+  /* machines */
+  var mh={}; (S.machineLogs||[]).filter(function(r){ return r.date===iso&&!r.offsite&&(+r.hours||0)>0; }).forEach(function(r){
+    var m=(S.machines||[]).find(function(x){ return x.id===r.machine; }), nm=m?m.name:'Machine', s=(r.site==='site-barela'?'Barela':'Bypass'), k=s+'|'+nm;
+    mh[k]=(mh[k]||0)+(+r.hours||0); });
+  Object.keys(mh).forEach(function(k){ var p=k.split('|'); add(p[0],p[1].replace(/^jcb$/i,'JCB').replace(/^roller$/i,'Road roller')+': '+(Math.round(mh[k]*10)/10)+' h worked (machine log)'); });
+  /* deliveries to site */
+  var regs=[['gitti','Gitti 20mm','trip'],['msand','M-Sand','trip'],['sixmm','6mm gitti / dust','trip'],['hava','Hava','trip'],['dumper','Dumper','trip'],['loha','Steel','kg'],['cement','Cement','bag'],
+            ['bindingwire','Binding wire','kg'],['readymix','Ready mix',''],['tmgitti','T.M. gitti',''],['bricks','Bricks',''],['blocks','AAC blocks',''],['adhesive','Adhesive',''],['diesel','Diesel','L']];
+  regs.forEach(function(g){
+    ((S.lb&&S.lb[g[0]])||[]).filter(on).forEach(function(r){
+      if(r.transfer||r.nil) return; var q=g[0]==='diesel'?(+r.litres||wdQty(r.qty)):(g[0]==='hava'||g[0]==='dumper'?(+r.trips||wdQty(r.qty)):wdQty(r.qty)); if(!q) return;
+      var qs=(g[2]==='trip'&&(g[0]==='gitti'||g[0]==='msand'||g[0]==='sixmm'))?'1 load ('+r.qty+')':(String(r.qty||q)+(g[2]&&!/[a-z]/i.test(String(r.qty||''))?' '+g[2]:''));
+      add(r.site,g[1]+' received: '+qs+(r.size?' '+r.size:'')+(r.party?' — '+r.party:''));
+    });
+  });
+  ((S.lb&&S.lb.incoming)||[]).filter(on).forEach(function(r){
+    if(r.transfer||/round-off/i.test(r.item||'')) return;
+    add(r.site,'Received: '+(r.item||'goods')+(r.qty?' — '+r.qty+(r.unit?' '+r.unit:''):'')+(r.party?' ('+r.party+')':''));
+  });
+  return out;
+}
+function wdText(iso){
+  var d=wdDayName(iso), w=wdList().filter(function(x){ return x.date===iso; }), a=wdAuto(iso), t='Work done — '+d.lbl+'\n';
+  if(w.length){ t+='\n'; w.forEach(function(x){ t+='• '+x.text+(x.site&&x.site!=='Bypass'?' ('+x.site+')':'')+'\n'; }); }
+  if(a.length){ t+='\nFrom the records:\n'; a.forEach(function(x){ t+='• '+x.text+(x.site&&x.site!=='Bypass'?' ('+x.site+')':'')+'\n'; }); }
+  return t;
+}
+function wdSitePill(s){ return s==='Barela'?' <span class="pill" style="background:var(--slate-soft);color:var(--slate)">Barela</span>':''; }
+function P_workdone(){
+  var t=today(), list=wdList();
+  var days=wdDays().filter(function(d){ return d===t||list.some(function(w){ return w.date===d; })||wdAuto(d).length; });
+  var inSt='padding:7px 9px;border:1px solid var(--line-2);border-radius:6px;background:var(--surface);color:var(--ink);font:inherit';
+  var h=pageHead('Work Done','What work was done on site, day by day','');
+  h+='<div class="card"><div style="padding:12px 14px;display:grid;gap:8px">'+
+     '<textarea id="wdText" rows="2" placeholder="Write today\'s work — one job per line, e.g. 9 solar lights fitted" style="width:100%;resize:vertical;'+inSt+'"></textarea>'+
+     '<div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">'+
+       '<input type="date" id="wdDate" value="'+t+'" aria-label="Date" style="'+inSt+'">'+
+       '<select id="wdSite" aria-label="Site" style="'+inSt+'"><option>Bypass</option><option>Barela</option></select>'+
+       '<button class="btn pri" onclick="wdAdd()">+ Add</button></div></div></div>';
+  days.forEach(function(iso){
+    var d=wdDayName(iso), w=list.filter(function(x){ return x.date===iso; }), a=wdAuto(iso);
+    h+='<div class="card"><div style="padding:12px 14px;display:grid;gap:8px">'+
+       '<div class="spread" style="align-items:center"><div style="font-weight:600;font-size:15px">'+esc(d.lbl)+(d.tag?' <span class="pill" style="background:var(--good-soft);color:var(--good)">'+d.tag+'</span>':'')+'</div>'+
+       '<button class="btn sm" onclick="wdCopy(\''+iso+'\')" title="Copy for WhatsApp">📋 Copy</button></div>';
+    if(w.length){
+      h+='<ul style="margin:0;padding-left:20px;display:grid;gap:4px;font-size:14px">';
+      w.forEach(function(x){
+        h+='<li><span>'+esc(x.text)+'</span>'+wdSitePill(x.site)+
+           ' <a href="#" class="hint" style="margin-left:6px" onclick="wdEdit(\''+x.id+'\');return false" title="Edit">✎</a>'+
+           ' <a href="#" class="hint" style="margin-left:4px;color:var(--crit)" onclick="wdDel(\''+x.id+'\');return false" title="Delete">✕</a></li>';
+      });
+      h+='</ul>';
+    } else h+='<div class="hint">Nothing written yet.'+(a.length?' <a href="#" onclick="wdUseAuto(\''+iso+'\');return false">Use the record lines</a>':'')+'</div>';
+    if(a.length){
+      h+='<details><summary class="hint" style="cursor:pointer">From the records ('+a.length+')</summary><ul style="margin:6px 0 0;padding-left:20px;display:grid;gap:2px">';
+      a.forEach(function(x){ h+='<li class="hint" style="font-size:13px">'+esc(x.text)+(x.site==='Barela'?' · Barela':'')+'</li>'; });
+      h+='</ul></details>';
+    }
+    h+='</div></div>';
+  });
+  return h;
+}
+function wdAdd(){
+  var d=(document.getElementById('wdDate')||{}).value||today(), s=(document.getElementById('wdSite')||{}).value||'Bypass', tx=(document.getElementById('wdText')||{}).value||'';
+  var lines=tx.split(/\n+/).map(function(x){ return x.replace(/^[\s•\-–*]+/,'').trim(); }).filter(Boolean);
+  if(!lines.length){ toast('Write the work done first',true); return; }
+  if(d<wdStart()){ S.workDoneStart=d; }
+  lines.forEach(function(l){ wdList().push({id:uid(),date:d,site:s,text:l,ts:Date.now()}); });
+  logAudit('C','Work Done',dmy(d),lines.join(' · ')); save(); toast('Added '+lines.length+' line'+(lines.length>1?'s':'')+' for '+dmy(d)); render();
+}
+function wdEdit(id){
+  var w=wdList().find(function(x){ return x.id===id; }); if(!w) return;
+  var t=prompt('Work done ('+dmy(w.date)+')',w.text); if(t===null) return; t=t.trim();
+  if(!t){ wdDel(id); return; }
+  var s=prompt('Site (Bypass / Barela)',w.site||'Bypass'); if(s!==null&&/barela/i.test(s)) w.site='Barela'; else if(s!==null) w.site='Bypass';
+  logAudit('U','Work Done',dmy(w.date),w.text+' → '+t); w.text=t; save(); render();
+}
+function wdDel(id){
+  var w=wdList().find(function(x){ return x.id===id; }); if(!w) return;
+  if(!confirm('Delete “'+w.text+'”?')) return;
+  S.workDone=wdList().filter(function(x){ return x.id!==id; }); logAudit('D','Work Done',dmy(w.date),w.text); save(); render();
+}
+function wdUseAuto(iso){
+  var a=wdAuto(iso); if(!a.length) return;
+  a.forEach(function(x){ wdList().push({id:uid(),date:iso,site:x.site,text:x.text,ts:Date.now(),auto:true}); });
+  logAudit('C','Work Done',dmy(iso),a.length+' lines copied from the records'); save(); toast('Copied — edit them as you like'); render();
+}
+function wdCopy(iso){
+  var t=wdText(iso);
+  try{ navigator.clipboard.writeText(t).then(function(){ toast('Copied — paste it in WhatsApp'); },function(){ prompt('Copy this',t); }); }catch(e){ prompt('Copy this',t); }
+}
+
+/* ---- "Split page into registers" / AI Inbox / Add from Claude: Work Done is its own register ---- */
+function wdSplitText(r){
+  var clean=function(x){ x=String(x||'').trim(); return (!x||/^work\s*done$/i.test(x)||/^nil+$/i.test(x)||/^DPR No\.?\s*\d+$/i.test(x))?'':x.replace(/^work\s*done\s*[:\-–·]?\s*/i,''); };
+  var who=clean(r.party), body=[r.work,r.item,r.name,r.description,r.text,r.remark,r.remarks].map(clean).filter(Boolean).join(' · ').replace(/\s*·\s*NIL\b/gi,'').trim();
+  return who&&body?who+' — '+body:(who||body);
+}
+function wdLinesOf(t){ return String(t||'').split(/\s*(?:\n|·|;)\s*/).map(function(x){ return x.replace(/^[\s•\-–*]+/,'').trim(); }).filter(Boolean); }
+if(typeof LB_SEC_LABEL!=='undefined'){
+  LB_SEC_LABEL.workdone='Work Done';
+  if(typeof LB_SEC_ALIAS!=='undefined'){ ['workdone','work','worknote','worknotes','dailywork','done','progress'].forEach(function(k){ LB_SEC_ALIAS[k]='workdone'; }); }
+  var _wdSec=lbSectionOf;
+  lbSectionOf=function(it,def){
+    var head=[it.party,it.work,it.item,it.name].map(function(x){ return String(x||''); }).join(' ');
+    var men=(+it.m||0)+(+it.h||0)+(+it.b||0)+(+it.mistri||0)+(+it.helper||0)+(+it.beldar||0);
+    if(/^\s*work\s*done\b/i.test(head)&&!men) return 'workdone';
+    return _wdSec(it,def);
+  };
+  var _wdShape=lbShapeRow;
+  lbShapeRow=function(sec,it,site){
+    if(sec!=='workdone') return _wdShape(sec,it,site);
+    var st=/barela/i.test(String(it.site||''))?'Barela':(it.site&&/bypass/i.test(String(it.site))?'Bypass':(site||'Bypass'));
+    return {date:toISO(it.date)||it.date||'',site:st,party:'Work done',text:it.text||wdSplitText(it)};
+  };
+  var _wdExists=lbRowExists;
+  lbRowExists=function(sec,row){
+    if(sec!=='workdone') return _wdExists(sec,row);
+    var d=toISO(row.date)||row.date||'', n=function(x){ return String(x||'').toLowerCase().replace(/[^a-z0-9]/g,''); }, lines=wdLinesOf(row.text);
+    return !!lines.length&&lines.every(function(l){ return wdList().some(function(w){ return w.date===d&&n(w.text)===n(l); }); });
+  };
+  var _wdSum=lbMixSummary;
+  lbMixSummary=function(sec,r){ return sec==='workdone'?'<b>Work done</b> · '+esc(r.text||'—'):_wdSum(sec,r); };
+  var _wdCommit=lbCommitRows;
+  lbCommitRows=function(list){
+    var n=0;
+    (list||[]).forEach(function(x){
+      if(x.sec!=='workdone'||x.skip) return;
+      var d=toISO(x.row.date)||x.row.date||today(), have=function(l){ var k=l.toLowerCase().replace(/[^a-z0-9]/g,''); return wdList().some(function(w){ return w.date===d&&w.text.toLowerCase().replace(/[^a-z0-9]/g,'')===k; }); };
+      wdLinesOf(x.row.text).forEach(function(l){ if(have(l)) return; wdList().push({id:uid(),date:d,site:x.row.site||'Bypass',text:l,ts:Date.now()}); n++; });
+      if(d<wdStart()) S.workDoneStart=d;
+    });
+    var rest=(list||[]).filter(function(x){ return x.sec!=='workdone'; });
+    var res=_wdCommit(rest);
+    if(n){ res.added.workdone=n; }
+    return res;
+  };
+}
+</script>
+<script>
+/* ===== 3D Site Model — PEECEE Group, NH30 bypass (rev K4), stored with the website in /site3d ===== */
+function P_site3d(){
+  var h=pageHead('3D Site Model','PEECEE Group · NH30 Bypass, Gauraiyaghat · master layout rev K4',
+    '<a class="btn sm" href="site3d/index.html" target="_blank" rel="noopener">⛶ Open full screen</a>'+
+    '<a class="btn sm" href="site3d/k4.html" target="_blank" rel="noopener">K4 without clubhouse</a>');
+  h+='<div class="card" style="padding:0;overflow:hidden"><iframe src="site3d/index.html" title="PEECEE 3D site model" '+
+     'style="display:block;width:100%;height:calc(100vh - 170px);min-height:480px;border:0;background:#0d1117" allow="fullscreen"></iframe></div>'+
+     '<p class="hint" style="margin-top:8px">Drag to turn · right-drag to move · scroll to zoom. Use the buttons in the model for views, time of day, clubhouse site and pictures.</p>';
+  return h;
+}
 </script>
 
 </body>

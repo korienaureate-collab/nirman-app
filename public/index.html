@@ -331,7 +331,7 @@ textarea.in{min-height:58px;resize:vertical}
   <aside id="rail">
     <div class="brand">
       <div class="mark" id="railMark">KA</div>
-      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 09-Oct 18:00</span></div>
+      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 09-Oct 18:05</span></div>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -13906,10 +13906,11 @@ if(typeof LB_SEC_LABEL!=='undefined'){
 <script>
 /* ===== 3D Site Model — PEECEE Group, NH30 bypass (rev K4), stored with the website in /site3d ===== */
 function P_site3d(){
+  var B=(location.protocol==='file:'||!/korienaureate\.online|localhost|onrender\.com/i.test(location.host))?'https://nirman.korienaureate.online/':'';
   var h=pageHead('3D Site Model','PEECEE Group · NH30 Bypass, Gauraiyaghat · master layout rev K4',
-    '<a class="btn sm" href="site3d/index.html" target="_blank" rel="noopener">⛶ Open full screen</a>'+
-    '<a class="btn sm" href="site3d/k4.html" target="_blank" rel="noopener">K4 without clubhouse</a>');
-  h+='<div class="card" style="padding:0;overflow:hidden"><iframe src="site3d/index.html" title="PEECEE 3D site model" '+
+    '<a class="btn sm" href="'+B+'site3d/index.html" target="_blank" rel="noopener">⛶ Open full screen</a>'+
+    '<a class="btn sm" href="'+B+'site3d/k4.html" target="_blank" rel="noopener">K4 without clubhouse</a>');
+  h+='<div class="card" style="padding:0;overflow:hidden"><iframe src="'+B+'site3d/index.html" title="PEECEE 3D site model" '+
      'style="display:block;width:100%;height:calc(100vh - 170px);min-height:480px;border:0;background:#0d1117" allow="fullscreen"></iframe></div>'+
      '<p class="hint" style="margin-top:8px">Drag to turn · right-drag to move · scroll to zoom. Use the buttons in the model for views, time of day, clubhouse site and pictures.</p>';
   return h;

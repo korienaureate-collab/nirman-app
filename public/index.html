@@ -331,7 +331,7 @@ textarea.in{min-height:58px;resize:vertical}
   <aside id="rail">
     <div class="brand">
       <div class="mark" id="railMark">KA</div>
-      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 09-Oct 17:30</span></div>
+      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 09-Oct 17:45</span></div>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -8830,6 +8830,7 @@ var CLAUDE_IMPORT_PROMPT=[
  'You are helping me enter site records into my construction ledger app "Nirman Ledger" (Korien Aureate, Bypass & Barela sites, Jabalpur).',
  'Read what I attach or type below and reply with ONE code block that starts with the line NIRMAN-IMPORT followed by a JSON array.',
  'Every item needs "section" and "date" (YYYY-MM-DD). Sections and fields:',
+ '- "workdone": what work was finished that day (no manpower) {text, site} — one job per item, e.g. {"section":"workdone","date":"2026-10-09","text":"9 solar lights fitted"}',
  '- "dpr": worker/contractor attendance {party, work, m, h, b, site, remark}  (m = Mistri Ⓜ, h = Helper Ⓗ, b = Beldar Ⓑ; NIL → 0,0,0 and remark "NIL")',
  '- "murum": {party, qty (trips), remark, site}   (NIL → qty 0, remark "NIL")',
  '- "incoming": any other material received {item, qty, unit, rate, amt, party, site, remark}',
@@ -13790,47 +13791,38 @@ function wdText(iso){
   if(a.length){ t+='\nFrom the records:\n'; a.forEach(function(x){ t+='• '+x.text+(x.site&&x.site!=='Bypass'?' ('+x.site+')':'')+'\n'; }); }
   return t;
 }
-function wdSitePill(s){ return '<span class="pill" style="'+(s==='Barela'?'background:var(--slate-soft);color:var(--slate)':'background:var(--accent-soft);color:var(--accent)')+'">'+esc(s||'Bypass')+'</span>'; }
+function wdSitePill(s){ return s==='Barela'?' <span class="pill" style="background:var(--slate-soft);color:var(--slate)">Barela</span>':''; }
 function P_workdone(){
-  var days=wdDays(), list=wdList(), t=today();
-  var written=list.length, daysWith=days.filter(function(d){ return list.some(function(w){ return w.date===d; }); }).length;
-  var h=pageHead('Work Done — Daily','What was done on site each day · from '+dmy(wdStart()),
-    '<button class="btn sm" onclick="wdCopy(\''+t+'\')">📋 Copy today</button>');
-  h+=lbTiles([
-    {cls:'s',k:'Days',v:String(days.length),n:'since '+dmy(wdStart())},
-    {cls:'g',k:'Work written',v:String(written),n:daysWith+' day'+(daysWith===1?'':'s')+' written'},
-    {k:'Today',v:String(list.filter(function(w){ return w.date===t; }).length),n:wdAuto(t).length+' lines from the records'}
-  ]);
-  h+='<div class="card"><header><h3>Add work done</h3><span class="sub">One line per job — e.g. “4 solar lights fitted”, “4 light points made”</span></header>'+
-     '<div style="padding:12px 14px;display:grid;gap:10px">'+
-     '<div class="row" style="gap:10px;flex-wrap:wrap;align-items:center">'+
-       '<label class="hint" for="wdDate">Date</label><input type="date" id="wdDate" value="'+t+'" min="'+wdStart()+'" style="padding:6px 8px;border:1px solid var(--line-2);border-radius:6px;background:var(--surface);color:var(--ink)">'+
-       '<label class="hint" for="wdSite">Site</label><select id="wdSite" style="padding:6px 8px;border:1px solid var(--line-2);border-radius:6px;background:var(--surface);color:var(--ink)"><option>Bypass</option><option>Barela</option></select>'+
-     '</div>'+
-     '<textarea id="wdText" rows="3" placeholder="4 solar lights fitted&#10;4 light points made" style="width:100%;padding:8px 10px;border:1px solid var(--line-2);border-radius:6px;font:inherit;background:var(--surface);color:var(--ink);resize:vertical"></textarea>'+
-     '<div><button class="btn pri" onclick="wdAdd()">+ Add</button> <span class="hint">Each line is saved as its own item. Lines “From the records” fill in by themselves.</span></div>'+
-     '</div></div>';
+  var t=today(), list=wdList();
+  var days=wdDays().filter(function(d){ return d===t||list.some(function(w){ return w.date===d; })||wdAuto(d).length; });
+  var inSt='padding:7px 9px;border:1px solid var(--line-2);border-radius:6px;background:var(--surface);color:var(--ink);font:inherit';
+  var h=pageHead('Work Done','What work was done on site, day by day','');
+  h+='<div class="card"><div style="padding:12px 14px;display:grid;gap:8px">'+
+     '<textarea id="wdText" rows="2" placeholder="Write today\'s work — one job per line, e.g. 9 solar lights fitted" style="width:100%;resize:vertical;'+inSt+'"></textarea>'+
+     '<div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">'+
+       '<input type="date" id="wdDate" value="'+t+'" aria-label="Date" style="'+inSt+'">'+
+       '<select id="wdSite" aria-label="Site" style="'+inSt+'"><option>Bypass</option><option>Barela</option></select>'+
+       '<button class="btn pri" onclick="wdAdd()">+ Add</button></div></div></div>';
   days.forEach(function(iso){
     var d=wdDayName(iso), w=list.filter(function(x){ return x.date===iso; }), a=wdAuto(iso);
-    h+='<div class="card"><header><h3>'+esc(d.lbl)+(d.tag?' <span class="pill" style="background:var(--good-soft);color:var(--good)">'+d.tag+'</span>':'')+'</h3>'+
-       '<span class="sub"><button class="btn sm" onclick="wdCopy(\''+iso+'\')">📋 Copy</button></span></header><div style="padding:10px 14px 14px;display:grid;gap:12px">';
-    h+='<div><div class="eyebrow" style="margin-bottom:6px">Work done (written)</div>';
+    h+='<div class="card"><div style="padding:12px 14px;display:grid;gap:8px">'+
+       '<div class="spread" style="align-items:center"><div style="font-weight:600;font-size:15px">'+esc(d.lbl)+(d.tag?' <span class="pill" style="background:var(--good-soft);color:var(--good)">'+d.tag+'</span>':'')+'</div>'+
+       '<button class="btn sm" onclick="wdCopy(\''+iso+'\')" title="Copy for WhatsApp">📋 Copy</button></div>';
     if(w.length){
-      h+='<ul style="margin:0;padding:0;list-style:none;display:grid;gap:6px">';
+      h+='<ul style="margin:0;padding-left:20px;display:grid;gap:4px;font-size:14px">';
       w.forEach(function(x){
-        h+='<li style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">'+wdSitePill(x.site)+'<span style="flex:1;min-width:180px">'+esc(x.text)+'</span>'+
-           '<button class="btn sm" onclick="wdEdit(\''+x.id+'\')">Edit</button><button class="btn sm dngr" onclick="wdDel(\''+x.id+'\')">✕</button></li>';
+        h+='<li><span>'+esc(x.text)+'</span>'+wdSitePill(x.site)+
+           ' <a href="#" class="hint" style="margin-left:6px" onclick="wdEdit(\''+x.id+'\');return false" title="Edit">✎</a>'+
+           ' <a href="#" class="hint" style="margin-left:4px;color:var(--crit)" onclick="wdDel(\''+x.id+'\');return false" title="Delete">✕</a></li>';
       });
       h+='</ul>';
-    } else h+='<div class="hint">Nothing written yet'+(iso===t?' — add today\'s work above.':'.')+(a.length?' <button class="btn sm" onclick="wdUseAuto(\''+iso+'\')">Use the record lines</button>':'')+'</div>';
-    h+='</div>';
-    h+='<div><div class="eyebrow" style="margin-bottom:6px">From the records (auto)</div>';
+    } else h+='<div class="hint">Nothing written yet.'+(a.length?' <a href="#" onclick="wdUseAuto(\''+iso+'\');return false">Use the record lines</a>':'')+'</div>';
     if(a.length){
-      h+='<ul style="margin:0;padding-left:18px;display:grid;gap:3px">';
-      a.forEach(function(x){ h+='<li class="hint" style="font-size:13px;color:var(--ink-2)">'+esc(x.text)+(x.site==='Barela'?' · <b>Barela</b>':'')+'</li>'; });
-      h+='</ul>';
-    } else h+='<div class="hint">No DPR, murum, machine or goods entries for this day yet.</div>';
-    h+='</div></div></div>';
+      h+='<details><summary class="hint" style="cursor:pointer">From the records ('+a.length+')</summary><ul style="margin:6px 0 0;padding-left:20px;display:grid;gap:2px">';
+      a.forEach(function(x){ h+='<li class="hint" style="font-size:13px">'+esc(x.text)+(x.site==='Barela'?' · Barela':'')+'</li>'; });
+      h+='</ul></details>';
+    }
+    h+='</div></div>';
   });
   return h;
 }
@@ -13862,6 +13854,53 @@ function wdUseAuto(iso){
 function wdCopy(iso){
   var t=wdText(iso);
   try{ navigator.clipboard.writeText(t).then(function(){ toast('Copied — paste it in WhatsApp'); },function(){ prompt('Copy this',t); }); }catch(e){ prompt('Copy this',t); }
+}
+
+/* ---- "Split page into registers" / AI Inbox / Add from Claude: Work Done is its own register ---- */
+function wdSplitText(r){
+  var clean=function(x){ x=String(x||'').trim(); return (!x||/^work\s*done$/i.test(x)||/^nil+$/i.test(x)||/^DPR No\.?\s*\d+$/i.test(x))?'':x.replace(/^work\s*done\s*[:\-–·]?\s*/i,''); };
+  var who=clean(r.party), body=[r.work,r.item,r.name,r.description,r.text,r.remark,r.remarks].map(clean).filter(Boolean).join(' · ').replace(/\s*·\s*NIL\b/gi,'').trim();
+  return who&&body?who+' — '+body:(who||body);
+}
+function wdLinesOf(t){ return String(t||'').split(/\s*(?:\n|·|;)\s*/).map(function(x){ return x.replace(/^[\s•\-–*]+/,'').trim(); }).filter(Boolean); }
+if(typeof LB_SEC_LABEL!=='undefined'){
+  LB_SEC_LABEL.workdone='Work Done';
+  if(typeof LB_SEC_ALIAS!=='undefined'){ ['workdone','work','worknote','worknotes','dailywork','done','progress'].forEach(function(k){ LB_SEC_ALIAS[k]='workdone'; }); }
+  var _wdSec=lbSectionOf;
+  lbSectionOf=function(it,def){
+    var head=[it.party,it.work,it.item,it.name].map(function(x){ return String(x||''); }).join(' ');
+    var men=(+it.m||0)+(+it.h||0)+(+it.b||0)+(+it.mistri||0)+(+it.helper||0)+(+it.beldar||0);
+    if(/^\s*work\s*done\b/i.test(head)&&!men) return 'workdone';
+    return _wdSec(it,def);
+  };
+  var _wdShape=lbShapeRow;
+  lbShapeRow=function(sec,it,site){
+    if(sec!=='workdone') return _wdShape(sec,it,site);
+    var st=/barela/i.test(String(it.site||''))?'Barela':(it.site&&/bypass/i.test(String(it.site))?'Bypass':(site||'Bypass'));
+    return {date:toISO(it.date)||it.date||'',site:st,party:'Work done',text:it.text||wdSplitText(it)};
+  };
+  var _wdExists=lbRowExists;
+  lbRowExists=function(sec,row){
+    if(sec!=='workdone') return _wdExists(sec,row);
+    var d=toISO(row.date)||row.date||'', n=function(x){ return String(x||'').toLowerCase().replace(/[^a-z0-9]/g,''); }, lines=wdLinesOf(row.text);
+    return !!lines.length&&lines.every(function(l){ return wdList().some(function(w){ return w.date===d&&n(w.text)===n(l); }); });
+  };
+  var _wdSum=lbMixSummary;
+  lbMixSummary=function(sec,r){ return sec==='workdone'?'<b>Work done</b> · '+esc(r.text||'—'):_wdSum(sec,r); };
+  var _wdCommit=lbCommitRows;
+  lbCommitRows=function(list){
+    var n=0;
+    (list||[]).forEach(function(x){
+      if(x.sec!=='workdone'||x.skip) return;
+      var d=toISO(x.row.date)||x.row.date||today(), have=function(l){ var k=l.toLowerCase().replace(/[^a-z0-9]/g,''); return wdList().some(function(w){ return w.date===d&&w.text.toLowerCase().replace(/[^a-z0-9]/g,'')===k; }); };
+      wdLinesOf(x.row.text).forEach(function(l){ if(have(l)) return; wdList().push({id:uid(),date:d,site:x.row.site||'Bypass',text:l,ts:Date.now()}); n++; });
+      if(d<wdStart()) S.workDoneStart=d;
+    });
+    var rest=(list||[]).filter(function(x){ return x.sec!=='workdone'; });
+    var res=_wdCommit(rest);
+    if(n){ res.added.workdone=n; }
+    return res;
+  };
 }
 </script>
 

@@ -331,7 +331,7 @@ textarea.in{min-height:58px;resize:vertical}
   <aside id="rail">
     <div class="brand">
       <div class="mark" id="railMark">KA</div>
-      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 09-Oct 18:05</span></div>
+      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 10-Oct 14:15</span></div>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -11387,7 +11387,8 @@ function dcRun(){
   PU.forEach(function(b){
     var mine=INC.filter(function(r){ return r.billId===b.id; }); if(mine.length<2) return;
     var bAmts=mine.map(function(r){ return +r.amt||0; }).filter(function(v){return v>0;});
-    var cand={}; INC.filter(function(r){ return !r.billId&&(r.date===b.date||_dcConfusable(r.date,b.date)); }).forEach(function(r){ (cand[r.date]=cand[r.date]||[]).push(r); });
+    var _bp=_dcPartyName(b.party), _same=function(r){ if(!r.party||!_bp) return true; if(_dcParty(r.party)===_dcParty(_bp)) return true; try{ return dueKey(r.party)===dueKey(_bp)||(typeof dueRowKey==='function'&&dueRowKey(r.party)===dueRowKey(_bp)); }catch(e){ return false; } };
+    var cand={}; INC.filter(function(r){ return !r.billId&&_same(r)&&(r.date===b.date||_dcConfusable(r.date,b.date)); }).forEach(function(r){ (cand[r.date]=cand[r.date]||[]).push(r); });
     Object.keys(cand).forEach(function(d){
       var rows=cand[d], hit=rows.filter(function(r){ return bAmts.some(function(v){ return Math.abs(v-_dcIncAmt(r))<=1; }); });
       if(hit.length<2) return;

@@ -8713,7 +8713,7 @@ function lbRowExists(sec,row){
   var p6=function(x){return String(x||'').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,6);};
   return list.some(function(r){
     if((toISO(r.date)||r.date||'')!==d) return false;
-    if(sec==='dpr'){ var nm=function(x){return String(x||'').toLowerCase().replace(/[^a-z0-9]/g,'');}; return nm(r.party)===nm(row.party); }   // full name — 'Camera Technician' ≠ 'Camera Fitters'
+    if(sec==='dpr'){ var nm=function(x){return String(x||'').toLowerCase().replace(/[^a-z0-9]/g,'');}; return nm(r.party)===nm(row.party)&&!(dprMD(row)>0&&!dprMD(r)); }   // full name — 'Camera Technician' ≠ 'Camera Fitters'
     if(sec==='mlog') return (r.mtype||'jcb')===row.mtype&&(lbNum(r.hmStart)===lbNum(row.hmStart)||(!lbNum(row.hmStart)&&lbNum(r.hours)===lbNum(row.hours)));
     if(sec==='murum') return !lbNum(row.qty) || lbNum(r.qty)===lbNum(row.qty);   // a NIL line is redundant if the day already has a row
     if(sec==='incoming'){ var n=function(x){return String(x||'').toLowerCase().replace(/[^a-z0-9]/g,'');};
@@ -8743,6 +8743,14 @@ function lbCommitRows(list){
   list.forEach(function(x){
     if(x.skip) return;
     if(x.sec!=='mlog'&&!S.lb[x.sec]) S.lb[x.sec]=[];
+    /* DPR: a line with people replaces the same person's NIL line that day (e.g. Company Labour NIL → 2 B) */
+    if(x.sec==='dpr'&&dprMD(x.row)>0&&!dprIsWork(x.row)){
+      var nm=function(v){return String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'');}, d0=toISO(x.row.date)||x.row.date;
+      var nil=S.lb.dpr.find(function(r){ return (toISO(r.date)||r.date)===d0&&nm(r.party)===nm(x.row.party)&&!dprMD(r)&&!dprIsWork(r); });
+      if(nil){ var ref=String(nil.remark||'').match(/DPR\s*No\.?\s*\d+/i); Object.assign(nil,x.row);
+        if(ref&&!/DPR\s*No/i.test(nil.remark||'')) nil.remark=[nil.remark,ref[0]].filter(Boolean).join(' · ');
+        added.dpr=(added.dpr||0)+1; return; }
+    }
     if(lbRowExists(x.sec,x.row)){ skipped++; return; }
     if(x.sec==='mlog'){ S.machineLogs=S.machineLogs||[]; S.machineLogs.push(x.row); }
     else S.lb[x.sec].push(x.row);

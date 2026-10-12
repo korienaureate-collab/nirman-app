@@ -8713,7 +8713,7 @@ function lbRowExists(sec,row){
   var p6=function(x){return String(x||'').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,6);};
   return list.some(function(r){
     if((toISO(r.date)||r.date||'')!==d) return false;
-    if(sec==='dpr'){ var nm=function(x){return String(x||'').toLowerCase().replace(/[^a-z0-9]/g,'');}; return nm(r.party)===nm(row.party)&&!(dprMD(row)>0&&!dprMD(r)); }   // full name — 'Camera Technician' ≠ 'Camera Fitters'
+    if(sec==='dpr'){ var nm=function(x){return String(x||'').toLowerCase().replace(/[^a-z0-9]/g,'');}; if(dprIsWork(row)) return dprIsWork(r)&&nm(r.work)===nm(row.work); return nm(r.party)===nm(row.party)&&!(dprMD(row)>0&&!dprMD(r)); }   // full name — 'Camera Technician' ≠ 'Camera Fitters'
     if(sec==='mlog') return (r.mtype||'jcb')===row.mtype&&(lbNum(r.hmStart)===lbNum(row.hmStart)||(!lbNum(row.hmStart)&&lbNum(r.hours)===lbNum(row.hours)));
     if(sec==='murum') return !lbNum(row.qty) || lbNum(r.qty)===lbNum(row.qty);   // a NIL line is redundant if the day already has a row
     if(sec==='incoming'){ var n=function(x){return String(x||'').toLowerCase().replace(/[^a-z0-9]/g,'');};

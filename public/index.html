@@ -332,7 +332,7 @@ textarea.in{min-height:58px;resize:vertical}
   <aside id="rail">
     <div class="brand">
       <div class="mark" id="railMark">KA</div>
-      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 26-Oct 15:00</span></div>
+      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 26-Oct 18:15</span></div>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -14084,9 +14084,11 @@ if(typeof lbShapeRow==='function'){
   lbShapeRow=function(sec,it,site){
     var o=_khShape.apply(this,arguments);
     if(sec!=='khangi'||!o) return o;
-    var t=khNum(it.trips), q=khNum(it.qty||it.pieces||it.pcs);
+    var t=khNum(it.trips), q=khNum(it.pieces||it.pcs||it.qty), u=String(it.unit||'').toLowerCase();
+    if(!t&&q&&!(it.pieces||it.pcs)&&(/trip|gadi|गाड़ी|tractor|load/.test(u)||(q<100&&!/pc|pcs|piece|nos|no\b/.test(u)))){ t=q; q=0; }   /* "2" or "2 Trip" = trips */
     if(!q&&t) q=R2(t*KHANGI_PER_TRIP);
     if(!t&&q) t=R2(q/KHANGI_PER_TRIP);
+    if(o.item&&!o.remark) o.remark=String(o.item); delete o.item; delete o.unit; delete o.amt; delete o.status;
     o.trips=lbIsNil(it)?0:t; o.qty=lbIsNil(it)?0:q; o.rate=khNum(it.rate)||KHANGI_RATE;
     return o;
   };
@@ -14099,6 +14101,80 @@ if(typeof lbMixSummary==='function'){
       ' · ₹'+fmtI(khNum(r.rate)||0,2)+'/pc'+(r.party?' · '+esc(r.party):'');
   };
 }
+
+/* ===== Khangi lines never go to Incoming Goods (owner 26/10/2026) =====
+   1) a line from Claude / AI Add / the split dialog whose item says Khangi goes to the Khangi register,
+      even if it was sent as "incoming";
+   2) Khangi rows already sitting in Incoming Goods are moved to Khangi — nothing is lost: the original
+      qty / unit / rate / amount / status are kept in the remark and in "fromIncoming";
+   3) a Khangi line is "already there" when Khangi has the same date and the same pieces (supplier ignored
+      when one side has none) — so the same paper is never counted twice. */
+var KH_RE=/(^|[^a-z])k+h?a+n+g+h?(i|ee|y)([^a-z]|$)|खंगी|खांगी|खंगि|कंगी|खँगी/i;
+var KH_NOT=['cash','dpr','mlog','murum','hava','dumper','workdone','khangi'];
+function khIsKhangi(it){ return KH_RE.test([it.item,it.name,it.description,it.type].join(' ')); }
+if(typeof lbSectionOf==='function'){
+  var _khSec=lbSectionOf;
+  lbSectionOf=function(it,def){
+    var sec=_khSec.apply(this,arguments);
+    if(it&&KH_NOT.indexOf(sec)<0&&khIsKhangi(it)) return 'khangi';
+    return sec;
+  };
+}
+function khSame(a,b){
+  if((toISO(a.date)||a.date||'')!==(toISO(b.date)||b.date||'')) return false;
+  if(khPieces(a)!==khPieces(b)) return false;
+  var p6=function(x){ return String(x||'').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,6); };
+  return !p6(a.party)||!p6(b.party)||p6(a.party)===p6(b.party);
+}
+if(typeof lbRowExists==='function'){
+  var _khExists=lbRowExists;
+  lbRowExists=function(sec,row){
+    if(sec!=='khangi') return _khExists.apply(this,arguments);
+    return ((S.lb&&S.lb.khangi)||[]).some(function(r){ return khSame(r,row); });
+  };
+}
+function khFromIncoming(r){
+  var q=khNum(r.qty), u=String(r.unit||'').toLowerCase(), rate=khNum(r.rate), t=0, p=0;
+  if(/trip|gadi|गाड़ी|tractor|load/.test(u)){ t=q; p=R2(q*KHANGI_PER_TRIP); }
+  else if(q>=100){ p=q; t=R2(q/KHANGI_PER_TRIP); }
+  else if(q>0&&!/pc|pcs|piece|nos|no\b/.test(u)){ t=q; p=R2(q*KHANGI_PER_TRIP); }
+  else { p=q; t=q?R2(q/KHANGI_PER_TRIP):0; }
+  var pr=(rate>0&&rate<=100)?rate:KHANGI_RATE;
+  var was='Incoming Goods: '+[r.item,(r.qty!=null?r.qty:'')+' '+(r.unit||''),r.rate?'₹'+r.rate:'',r.amt?'= ₹'+r.amt:'',r.status||''].filter(function(x){ return String(x).trim(); }).join(' · ');
+  return {date:r.date,party:r.party||'',trips:t,qty:p,rate:pr,site:r.site||'Bypass',
+    remark:[r.remark,'moved from '+was].filter(Boolean).join(' · '),
+    fromIncoming:JSON.parse(JSON.stringify(r))};
+}
+function khMoveFromIncoming(quiet){
+  try{
+    if(!S||!S.lb||!S.lb.incoming) return 0;
+    if(!S.lb.khangi) S.lb.khangi=[];
+    var keep=[], moved=0, merged=0;
+    S.lb.incoming.forEach(function(r){
+      if(!r||r.billId||r.bill||r.lot||!khIsKhangi(r)){ keep.push(r); return; }
+      var row=khFromIncoming(r);
+      var twin=S.lb.khangi.find(function(k){ return khSame(k,row); });
+      if(twin){ twin.remark=[twin.remark,'same paper was also in '+row.remark.split('moved from ')[1]].filter(Boolean).join(' · ');
+        (twin.alsoFromIncoming=twin.alsoFromIncoming||[]).push(row.fromIncoming); merged++; }
+      else { S.lb.khangi.push(row); moved++; }
+    });
+    if(moved||merged){
+      S.lb.incoming=keep;
+      if(typeof logAudit==='function') logAudit('U','Khangi','Incoming → Khangi',moved+' Khangi row(s) moved from Incoming Goods'+(merged?', '+merged+' were the same paper as a Khangi row already there (kept in its remark)':'')+' — nothing deleted');
+      if(!quiet&&typeof toast==='function') toast('Khangi: '+(moved+merged)+' row(s) moved from Incoming Goods to the Khangi register');
+    }
+    return moved+merged;
+  }catch(e){ return 0; }
+}
+if(typeof lbCommitRows==='function'){
+  var _khCommit=lbCommitRows;
+  lbCommitRows=function(list){
+    var res=_khCommit.apply(this,arguments);
+    if(khMoveFromIncoming(false)){ try{ save(); }catch(e){} }
+    return res;
+  };
+}
+setTimeout(function(){ if(typeof TAB!=='undefined'&&TAB.paused) return; if(khMoveFromIncoming(false)){ save(); render(); } },1500);
 
 function P_lb_khangi(){
   if(!S.lb) S.lb={}; if(!S.lb.khangi) S.lb.khangi=[];

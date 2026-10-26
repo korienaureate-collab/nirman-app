@@ -332,7 +332,7 @@ textarea.in{min-height:58px;resize:vertical}
   <aside id="rail">
     <div class="brand">
       <div class="mark" id="railMark">KA</div>
-      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 15-Oct 13:45</span></div>
+      <div><b>Nirman Ledger</b><span id="brandSub">Nirman Ledger</span><span style="display:block;font-family:var(--mono);font-size:10px;color:var(--good);margin-top:3px" title="App version — tell Claude this if something looks unfixed">✔ version 26-Oct 15:00</span></div>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -1367,6 +1367,7 @@ const NAV=[
 ['lb_bindingwire','Binding Wire','stock'],
    ['lb_readymix','Readymix','stock'],
    ['lb_bricks','Bricks (ईंट)','stock'],
+   ['lb_khangi','Khangi','stock'],
    ['lb_blocks','Blocks (AAC)','stock'],
    ['lb_incoming','Incoming Goods','stock'],
    ['lb_cash','Cash Book / PC Payments','wage'],
@@ -5717,6 +5718,7 @@ ONLY IF it is NOT a printed shop bill — pick from these HANDWRITTEN REGISTER t
 • Diesel / Fuel register           → "diesel"
 • TM Gitti / Transit Mix register  → "tm_gitti"
 • Bricks / Eent register           → "bricks"
+• Khangi register (₹8 a piece, 1 trip = 1000 pieces) → "khangi" {party, trips, qty (pieces), rate, site, remark}
 • AAC Block register               → "aac_block"
 • Steel / Loha / Sariya / Iron rod → "steel_loha"
 • Labour Muster / Attendance       → "labour_muster"
@@ -11766,7 +11768,7 @@ const PAGES={
  lb_murum:P_lb_murum, lb_dpr:P_lb_dpr, workdone:function(){ return P_workdone(); }, aiinbox:P_aiinbox,
  lb_due:function(){ return P_lb_due(); }, lb_gitti:P_lb_gitti, lb_hava:P_lb_hava, lb_dumper:P_lb_dumper, lb_msand:P_lb_msand, lb_sixmm:function(){ return P_lb_sixmm(); },
  lb_loha:P_lb_loha, lb_cement:P_lb_cement, lb_bindingwire:P_lb_bindingwire,
- lb_readymix:P_lb_readymix, lb_bricks:P_lb_bricks, lb_blocks:P_lb_blocks,
+ lb_readymix:P_lb_readymix, lb_bricks:P_lb_bricks, lb_khangi:function(){ return P_lb_khangi(); }, lb_blocks:P_lb_blocks,
   lb_adhesive:P_lb_adhesive, lb_tmgitti:P_lb_tmgitti, lb_diesel:P_lb_diesel,
   lb_incoming:P_lb_incoming, lb_cash:function(){ return P_lb_cash(); }, lb_bills:P_lb_bills, deepcheck:P_deepcheck
 };
@@ -14020,6 +14022,115 @@ if(typeof DUE_LABEL!=='undefined'){
     var _pLbCashOrig=P_lb_cash;
     P_lb_cash=function(){ var h=_pLbCashOrig(), c=cbPendingCard(); if(!c) return h; var at=h.indexOf('<div class="card"'); return at<0?h+c:h.slice(0,at)+c+h.slice(at); };
   }
+}
+</script>
+<script>
+/* ===== Khangi register (owner 26/10/2026): ₹8 per piece · 1 trip = 1,000 pieces =====
+   Works like Bricks: Date · Supplier · Trips · Pieces · Rate per piece · Remark, one card per site.
+   Cost = pieces × rate. Unpaid until paid in the Cash Book (it counts in Paid & Due like Bricks). */
+var KHANGI_RATE=8, KHANGI_PER_TRIP=1000;
+(function(){
+  try{ if(typeof S!=='undefined'&&S){ if(!S.lb) S.lb={}; if(!S.lb.khangi) S.lb.khangi=[]; } }catch(e){}
+  if(typeof LB_COST_UNIT!=='undefined') LB_COST_UNIT.khangi='piece';
+  if(typeof DUE_REGS!=='undefined'&&DUE_REGS.indexOf('khangi')<0) DUE_REGS.push('khangi');
+  if(typeof DUE_LABEL!=='undefined') DUE_LABEL.khangi='Khangi';
+  if(typeof LB_SEC_ALIAS!=='undefined'){ LB_SEC_ALIAS.khangi='khangi'; LB_SEC_ALIAS.kangi='khangi'; LB_SEC_ALIAS.khanghi='khangi'; LB_SEC_ALIAS.khangee='khangi'; }
+  if(typeof LB_SEC_LABEL!=='undefined') LB_SEC_LABEL.khangi='Khangi';
+})();
+function khNum(v){ var m=String(v==null?'':v).replace(/,/g,'').match(/-?\d+(?:\.\d+)?/); return m?(parseFloat(m[0])||0):0; }
+function khPieces(r){ var q=khNum(r&&r.qty); if(q) return q; var t=khNum(r&&r.trips); return t?R2(t*KHANGI_PER_TRIP):0; }
+
+/* cost: pieces × rate per piece */
+if(typeof lbRowCost==='function'){
+  var _khRowCost=lbRowCost;
+  lbRowCost=function(reg,r){
+    if(reg!=='khangi') return _khRowCost.apply(this,arguments);
+    if(!r) return null;
+    if(r.transfer||r.nil) return 0;
+    if(+r.amt) return +r.amt;
+    var p=khPieces(r); if(!p) return 0;
+    var rate=khNum(r.rate); if(!rate) return null;
+    return R2(p*rate);
+  };
+}
+
+/* + Add Row: today, 1 trip = 1,000 pieces, ₹8 a piece */
+if(typeof lbAddRowSite==='function'){
+  var _khAddRowSite=lbAddRowSite;
+  lbAddRowSite=function(register,site){
+    if(register!=='khangi') return _khAddRowSite.apply(this,arguments);
+    if(!S.lb) S.lb={}; if(!S.lb.khangi) S.lb.khangi=[];
+    S.lb.khangi.push({date:today(),party:'',trips:1,qty:KHANGI_PER_TRIP,rate:KHANGI_RATE,site:site||'Bypass',remark:''});
+    save(); render(); toast('Khangi row added — 1 trip, 1,000 pieces, ₹8 a piece. Change what is different.');
+  };
+}
+
+/* typing Trips fills Pieces (trips × 1,000) unless pieces were written by hand */
+if(typeof lbEditRow==='function'){
+  var _khEditRow=lbEditRow;
+  lbEditRow=function(register,idx,col,val){
+    if(register!=='khangi'||col!=='trips') return _khEditRow.apply(this,arguments);
+    var r=S.lb&&S.lb.khangi&&S.lb.khangi[idx]; if(!r) return;
+    var oldT=khNum(r.trips), oldQ=khNum(r.qty);
+    _khEditRow.apply(this,arguments);
+    var t=khNum(r.trips);
+    if(t&&(!oldQ||oldQ===R2(oldT*KHANGI_PER_TRIP))){ r.qty=R2(t*KHANGI_PER_TRIP); save(); render(); }
+  };
+}
+
+/* rows that come from the AI Inbox / split dialog */
+if(typeof lbShapeRow==='function'){
+  var _khShape=lbShapeRow;
+  lbShapeRow=function(sec,it,site){
+    var o=_khShape.apply(this,arguments);
+    if(sec!=='khangi'||!o) return o;
+    var t=khNum(it.trips), q=khNum(it.qty||it.pieces||it.pcs);
+    if(!q&&t) q=R2(t*KHANGI_PER_TRIP);
+    if(!t&&q) t=R2(q/KHANGI_PER_TRIP);
+    o.trips=lbIsNil(it)?0:t; o.qty=lbIsNil(it)?0:q; o.rate=khNum(it.rate)||KHANGI_RATE;
+    return o;
+  };
+}
+if(typeof lbMixSummary==='function'){
+  var _khMix=lbMixSummary;
+  lbMixSummary=function(sec,r){
+    if(sec!=='khangi') return _khMix.apply(this,arguments);
+    return '<b>'+fmtI(khPieces(r),0)+' pieces</b>'+(khNum(r.trips)?' · '+r.trips+' trip'+(khNum(r.trips)===1?'':'s'):'')+
+      ' · ₹'+fmtI(khNum(r.rate)||0,2)+'/pc'+(r.party?' · '+esc(r.party):'');
+  };
+}
+
+function P_lb_khangi(){
+  if(!S.lb) S.lb={}; if(!S.lb.khangi) S.lb.khangi=[];
+  S.lb.khangi.sort(function(a,b){return (toISO(a.date)||a.date)<(toISO(b.date)||b.date)?1:-1;});
+  var all=S.lb.khangi;
+  var sum=function(rows,f){ return R2(rows.reduce(function(s,r){ return s+f(r); },0)); };
+  var trips=function(rows){ return sum(rows,function(r){ return khNum(r.trips); }); };
+  var pcs=function(rows){ return sum(rows,khPieces); };
+  var amt=function(rows){ return sum(rows,function(r){ return lbRowCost('khangi',r)||0; }); };
+  var bp=all.filter(function(r){return r.site!=='Barela';}), bl=all.filter(function(r){return r.site==='Barela';});
+  var h=pageHead('Khangi Register ('+all.length+' entr'+(all.length===1?'y':'ies')+')',
+    'Rate ₹'+KHANGI_RATE+' a piece · 1 trip = '+fmtI(KHANGI_PER_TRIP,0)+' pieces · type the trips and the pieces fill in · click any cell to edit · not paid until it is in the Cash Book',
+    '<button class="btn sm" onclick="lbDedup(\'khangi\')">🧹 Dedup</button>'+lbUndoBtn('khangi'));
+  h+=lbTiles([
+    {cls:'a',k:'Trips',v:fmtI(trips(all),0),n:all.length+' entr'+(all.length===1?'y':'ies')},
+    {cls:'s',k:'Pieces',v:fmtI(pcs(all),0),n:'Bypass '+fmtI(pcs(bp),0)+' · Barela '+fmtI(pcs(bl),0)},
+    {cls:'g',k:'Amount',v:'₹'+fmtI(amt(all),0),n:'pieces × rate'},
+    {cls:'w',k:'Rate',v:'₹'+KHANGI_RATE+' / piece',n:fmtI(KHANGI_PER_TRIP,0)+' pieces a trip'}
+  ]);
+  var dup=lbFindDupIndices('khangi');
+  if(Object.keys(dup).length) h+='<div style="background:rgba(220,50,50,0.1);color:var(--crit);padding:8px 16px;border-radius:6px;margin-bottom:12px;font-size:13px">⚠ Some rows look the same — click 🧹 Dedup to review (delete the copy, or ✓ Not duplicates)</div>';
+  function card(site,rows,force){
+    if(!rows.length&&!force) return '';
+    var idx=rows.map(function(r){return all.indexOf(r);});
+    var tbl=lbEditableTable('khangi',['Date','Supplier','Trips','Qty','Rate','Remark'],rows,idx)
+      .replace('<th>Qty</th>','<th>Pieces</th>').replace('<th>Rate</th>','<th>Rate / piece (₹)</th>');
+    return '<div class="card" style="margin-bottom:14px"><header><h3>Khangi — '+site+'</h3><span class="sub">'+
+      (rows.length?fmtI(trips(rows),0)+' trips · '+fmtI(pcs(rows),0)+' pieces · ₹'+fmtI(amt(rows),0):'no entries yet')+'</span></header>'+
+      tbl+lbFooter('khangi',site)+'</div>';
+  }
+  h+=card('Bypass',bp,!all.length)+card('Barela',bl,false);
+  return h;
 }
 </script>
 
